@@ -42,7 +42,7 @@ pnpm tauri dev
 
 | Área | Estado |
 |---|---|
-| Detecção de mídia (MPRIS) | planejado |
+| Detecção de mídia (MPRIS) | **pronto** |
 | Letras sincronizadas (LRCLIB) | planejado |
 | Overlay always-on-top | em investigação |
 | Tray + atalho global | planejado |

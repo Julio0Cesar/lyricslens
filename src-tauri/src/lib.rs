@@ -1,99 +1,109 @@
-//! SPIKE: investigação das capacidades de overlay em Wayland/Hyprland.
-//!
-//! Este arquivo é descartável. O objetivo é responder, com dado real:
-//!   1. `transparent: true` produz janela realmente transparente?
-//!   2. `set_always_on_top` tem algum efeito em Wayland?
-//!   3. `set_ignore_cursor_events` produz click-through de verdade?
-//!   4. Regras do Hyprland (float/pin) resolvem o que o Wayland proíbe?
+mod media;
+mod overlay;
+mod sync;
 
+use std::sync::Mutex;
+
+use media::{MediaEvent, MediaProvider, PlatformProvider, PlaybackState, Track};
 use serde::Serialize;
-use tauri::{Manager, WebviewWindow};
+use sync::Clock;
+use tauri::{AppHandle, Emitter, Manager};
+use tokio::sync::mpsc;
 
+/// Tudo que o app sabe sobre o que está tocando agora.
+#[derive(Default)]
+struct NowPlaying {
+    track: Option<Track>,
+    state: PlaybackState,
+    clock: Clock,
+}
+
+#[derive(Default)]
+struct AppState {
+    now_playing: Mutex<NowPlaying>,
+}
+
+/// Fotografia do estado, para a UI se recuperar de um reload sem esperar o
+/// próximo evento.
 #[derive(Serialize)]
-struct Environment {
-    session_type: String,
-    desktop: String,
-    wayland_display: String,
-    scale_factor: f64,
-    outer_size: (u32, u32),
-    is_decorated: bool,
+#[serde(rename_all = "camelCase")]
+struct Snapshot {
+    track: Option<Track>,
+    state: PlaybackState,
+    position_ms: u64,
 }
 
-/// Coleta o ambiente de janela como o Tauri o enxerga.
 #[tauri::command]
-fn probe_environment(window: WebviewWindow) -> Result<Environment, String> {
-    let env_var = |k: &str| std::env::var(k).unwrap_or_else(|_| "<vazio>".into());
-
-    Ok(Environment {
-        session_type: env_var("XDG_SESSION_TYPE"),
-        desktop: env_var("XDG_CURRENT_DESKTOP"),
-        wayland_display: env_var("WAYLAND_DISPLAY"),
-        scale_factor: window.scale_factor().map_err(|e| e.to_string())?,
-        outer_size: {
-            let s = window.outer_size().map_err(|e| e.to_string())?;
-            (s.width, s.height)
-        },
-        is_decorated: window.is_decorated().map_err(|e| e.to_string())?,
-    })
-}
-
-/// Click-through. No Linux o tao implementa via input region vazia
-/// (`gtk_widget_input_shape_combine_region`), que é exatamente o mecanismo
-/// correto em Wayland — o compositor deixa o clique passar para a janela de baixo.
-#[tauri::command]
-fn set_click_through(window: WebviewWindow, enabled: bool) -> Result<(), String> {
-    window
-        .set_ignore_cursor_events(enabled)
-        .map_err(|e| e.to_string())
-}
-
-/// Em Wayland isso costuma virar no-op: o protocolo não permite que o cliente
-/// se coloque acima dos outros. Retorna Ok mesmo quando nada acontece — por isso
-/// a verificação real é visual + `hyprctl clients`.
-#[tauri::command]
-fn set_always_on_top(window: WebviewWindow, enabled: bool) -> Result<(), String> {
-    window.set_always_on_top(enabled).map_err(|e| e.to_string())
-}
-
-/// Aplica as regras do Hyprland na janela em runtime, via IPC do compositor.
-/// É o caminho alternativo quando o protocolo Wayland recusa o pedido do cliente.
-#[tauri::command]
-fn apply_hyprland_rules() -> Result<String, String> {
-    let dispatches = [
-        "dispatch setfloating class:^(lyricslens)$",
-        "dispatch pin class:^(lyricslens)$",
-    ];
-
-    let mut log = String::new();
-    for cmd in dispatches {
-        let out = std::process::Command::new("hyprctl")
-            .args(cmd.split_whitespace())
-            .output()
-            .map_err(|e| format!("falha ao executar hyprctl: {e}"))?;
-        log.push_str(&format!(
-            "{cmd} -> {}",
-            String::from_utf8_lossy(&out.stdout).trim()
-        ));
-        log.push('\n');
+fn now_playing(state: tauri::State<'_, AppState>) -> Snapshot {
+    let np = state.now_playing.lock().unwrap();
+    Snapshot {
+        track: np.track.clone(),
+        state: np.state,
+        position_ms: np.clock.position_ms(),
     }
-    Ok(log)
+}
+
+/// Ajuste fino da sincronia, em milissegundos.
+#[tauri::command]
+fn set_sync_offset(state: tauri::State<'_, AppState>, offset_ms: i64) {
+    state.now_playing.lock().unwrap().clock.set_offset_ms(offset_ms);
+}
+
+/// Consome os eventos do provider, mantém o estado do app e repassa para a UI.
+async fn consume(app: AppHandle, mut rx: mpsc::Receiver<MediaEvent>) {
+    while let Some(event) = rx.recv().await {
+        {
+            let state = app.state::<AppState>();
+            let mut np = state.now_playing.lock().unwrap();
+            match &event {
+                MediaEvent::TrackChanged { track } => {
+                    let playing = np.state.is_playing();
+                    np.track = Some(track.clone());
+                    np.clock = Clock::new();
+                    np.clock.set_playing(playing);
+                }
+                MediaEvent::PlaybackChanged { state } => {
+                    np.state = *state;
+                    np.clock.set_playing(state.is_playing());
+                }
+                MediaEvent::PositionAnchored { position_ms, .. }
+                | MediaEvent::Seeked { position_ms } => {
+                    np.clock.anchor(*position_ms);
+                }
+                MediaEvent::Gone => {
+                    *np = NowPlaying::default();
+                }
+            }
+        }
+
+        let _ = app.emit("media", &event);
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
-            probe_environment,
-            set_click_through,
-            set_always_on_top,
-            apply_hyprland_rules
+            now_playing,
+            set_sync_offset,
+            overlay::probe_environment,
+            overlay::set_click_through,
+            overlay::set_always_on_top,
+            overlay::apply_hyprland_rules,
         ])
         .setup(|app| {
-            // Log de partida: útil para confirmar o backend de janela em uso.
-            if let Some(w) = app.get_webview_window("overlay") {
-                println!("[spike] janela 'overlay' criada; decorada={:?}", w.is_decorated());
-            }
+            let handle = app.handle().clone();
+            let (tx, rx) = mpsc::channel(64);
+
+            tauri::async_runtime::spawn(consume(handle, rx));
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = PlatformProvider::default().run(tx).await {
+                    eprintln!("[media] provider parou: {e}");
+                }
+            });
+
             Ok(())
         })
         .run(tauri::generate_context!())

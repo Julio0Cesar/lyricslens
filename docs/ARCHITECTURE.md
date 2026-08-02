@@ -86,8 +86,12 @@ D-Bus PropertiesChanged ──▶ MediaProvider ──▶ TrackChanged
 ## Detecção de mídia (Linux)
 
 MPRIS via D-Bus (`org.mpris.MediaPlayer2.Player`). Vantagem sobre o equivalente do
-Windows: emite `PropertiesChanged`, então troca de faixa chega por evento — não
-precisa polling. Só a posição precisa ser lida periodicamente.
+Windows: emite `PropertiesChanged`, então troca de faixa chega por evento.
+
+Na implementação isso aparece de um jeito discreto: o `zbus` mantém um cache das
+propriedades alimentado pelo próprio `PropertiesChanged`. Ler `Metadata` a cada
+500ms **não é uma ida ao barramento** — é leitura de cache já atualizado pelo sinal.
+Só `Position` faz round-trip de verdade, porque por spec ela não emite sinal.
 
 Metadados úteis: `xesam:title`, `xesam:artist`, `xesam:album`, `xesam:url`,
 `mpris:length`, `mpris:artUrl`.
