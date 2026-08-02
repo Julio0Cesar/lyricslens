@@ -71,7 +71,7 @@ function App() {
           justifyContent: "center",
           alignItems: settings.textAlign === "center" ? "center" : "stretch",
         }}
-        className="flex flex-1 cursor-grab flex-col overflow-hidden px-6 py-4"
+        className="flex flex-1 flex-col overflow-hidden px-6 py-4"
       >
         {settings.showTrackInfo && track && (
           <div

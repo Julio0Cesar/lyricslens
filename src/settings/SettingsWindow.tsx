@@ -1,15 +1,25 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ColorPicker, Row, Section, Select, Slider, Toggle } from "./controls";
+import HotkeyCapture from "./HotkeyCapture";
 import LyricsPicker from "./LyricsPicker";
 import { useSettings } from "./useSettings";
 
+type CacheStats = { tracks: number; synced: number; pinned: number; misses: number };
+
+/** Um duplo clique em cima de um controle está mexendo nele, não fechando. */
+function emCimaDeControle(alvo: EventTarget | null): boolean {
+  return alvo instanceof Element && alvo.closest("input,button,select,textarea,label") !== null;
+}
+
 export default function SettingsWindow() {
-  const { settings, update } = useSettings();
+  const { settings, erro, update } = useSettings();
   const [fontes, setFontes] = useState<string[]>([]);
+  const [cache, setCache] = useState<CacheStats | null>(null);
 
   useEffect(() => {
     invoke<string[]>("list_fonts").then(setFontes).catch(() => setFontes([]));
+    invoke<CacheStats>("cache_stats").then(setCache).catch(() => setCache(null));
   }, []);
 
   if (!settings) {
@@ -17,7 +27,12 @@ export default function SettingsWindow() {
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-neutral-950 text-white">
+    <div
+      className="h-full overflow-y-auto bg-neutral-950 text-white"
+      onDoubleClick={(e) => {
+        if (!emCimaDeControle(e.target)) invoke("close_settings");
+      }}
+    >
       <div className="mx-auto flex max-w-lg flex-col gap-7 p-6">
         <header className="flex items-baseline justify-between">
           <h1 className="text-lg font-semibold">Configurações</h1>
@@ -28,6 +43,12 @@ export default function SettingsWindow() {
             mostrar / ocultar overlay
           </button>
         </header>
+
+        {erro && (
+          <p className="rounded border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[12px] text-rose-300">
+            {erro}
+          </p>
+        )}
 
         <LyricsPicker />
 
@@ -124,6 +145,12 @@ export default function SettingsWindow() {
         </Section>
 
         <Section title="Comportamento">
+          <Row label="Atalho global" hint="mostra e esconde o overlay">
+            <HotkeyCapture
+              value={settings.hotkey}
+              onChange={(v) => update({ hotkey: v })}
+            />
+          </Row>
           <Row label="Cliques atravessam" hint="o overlay deixa de responder ao mouse">
             <Toggle value={settings.clickThrough} onChange={(v) => update({ clickThrough: v })} />
           </Row>
@@ -191,6 +218,23 @@ export default function SettingsWindow() {
             </button>
           </Row>
         </Section>
+
+        {cache && (
+          <Section title="Cache">
+            <p className="text-[12px] leading-relaxed text-white/55">
+              <strong className="text-white/85">{cache.tracks}</strong>{" "}
+              {cache.tracks === 1 ? "faixa guardada" : "faixas guardadas"}
+              {cache.synced > 0 && <> · {cache.synced} com sincronia</>}
+              {cache.pinned > 0 && <> · {cache.pinned} fixadas para offline</>}
+              {cache.misses > 0 && <> · {cache.misses} sem letra conhecida</>}
+            </p>
+            <p className="text-[11px] leading-relaxed text-white/30">
+              Música que já tocou não vai à rede de novo. Faixa sem letra também é lembrada, para
+              a busca não ser refeita a cada vez — esse registro caduca em três dias, porque letra
+              nova entra no LRCLIB o tempo todo.
+            </p>
+          </Section>
+        )}
 
         <p className="pb-2 text-[11px] leading-relaxed text-white/30">
           As preferências ficam em <code>settings.json</code>, no diretório de dados do app. Em

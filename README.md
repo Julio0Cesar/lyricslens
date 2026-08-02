@@ -49,23 +49,22 @@ decisão explícita, pelo menu da bandeja.
 ### Atalho global
 
 Wayland não deixa um aplicativo registrar um atalho de sistema — quem registra é
-o compositor. O app aceita comandos na linha de comando e os entrega para a
-instância que já está rodando:
+o compositor. Em **Configurações → Comportamento → Atalho global** você pressiona
+a combinação e o app a registra no Hyprland via `hyprctl`, apontando de volta
+para o próprio executável.
+
+Nada é escrito na sua configuração do Hyprland. O compositor esquece o atalho ao
+reiniciar, e o app o reaplica toda vez que sobe — o efeito é o mesmo, sem mexer
+nos seus arquivos.
+
+Em outros compositores, use o keybind do seu ambiente chamando:
 
 ```bash
 lyricslens toggle   # mostra ou esconde
 lyricslens hide
+lyricslens settings
 lyricslens          # mostra
 ```
-
-No Hyprland, adicione em `~/.config/hypr/hyprland/keybinds.conf`:
-
-```conf
-bind = Super, L, exec, lyricslens toggle
-```
-
-Em desenvolvimento, use o caminho do binário:
-`src-tauri/target/debug/lyricslens toggle`.
 
 ### Posicionamento
 

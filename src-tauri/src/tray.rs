@@ -33,7 +33,12 @@ pub fn setup(app: &App) -> tauri::Result<()> {
             "toggle" => overlay::toggle(app, crate::geometry(app)),
             "recolocar" => overlay::show(app, crate::geometry(app)),
             "config" => overlay::open_settings(app),
-            "sair" => app.exit(0),
+            "sair" => {
+                // Um bind apontando para um executável que não está mais
+                // rodando abriria uma segunda instância no próximo atalho.
+                crate::clear_hotkey(app);
+                app.exit(0);
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {

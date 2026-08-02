@@ -24,6 +24,19 @@ pub struct Cache {
     conn: Mutex<Connection>,
 }
 
+#[derive(Debug, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CacheStats {
+    /// Faixas com alguma letra guardada.
+    pub tracks: i64,
+    /// Destas, quantas têm letra sincronizada.
+    pub synced: i64,
+    /// Fixadas para uso offline.
+    pub pinned: i64,
+    /// Faixas conhecidas como sem letra — a busca nem é refeita.
+    pub misses: i64,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum CacheError {
     #[error("banco: {0}")]
@@ -182,6 +195,24 @@ impl Cache {
         Ok(())
     }
 
+    /// Quanto o cache já poupou de rede — o número que responde "ele guarda
+    /// mesmo?" sem depender de acreditar.
+    pub fn stats(&self) -> Result<CacheStats, CacheError> {
+        let conn = self.conn.lock().unwrap();
+        Ok(CacheStats {
+            tracks: conn.query_row("SELECT COUNT(*) FROM lyrics", [], |r| r.get(0))?,
+            synced: conn.query_row(
+                "SELECT COUNT(*) FROM lyrics WHERE lines_json IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )?,
+            pinned: conn.query_row("SELECT COUNT(*) FROM lyrics WHERE pinned = 1", [], |r| {
+                r.get(0)
+            })?,
+            misses: conn.query_row("SELECT COUNT(*) FROM misses", [], |r| r.get(0))?,
+        })
+    }
+
     /// Marca a faixa como sem letra conhecida.
     pub fn mark_miss(&self, track_key: &str) -> Result<(), CacheError> {
         let conn = self.conn.lock().unwrap();
@@ -301,6 +332,25 @@ mod tests {
         assert!(c.should_retry(&t.key()).unwrap(), "achou: o fracasso caducou");
     }
 
+
+    #[test]
+    fn estatisticas_contam_o_que_importa() {
+        let c = Cache::in_memory().unwrap();
+        assert_eq!(c.stats().unwrap(), CacheStats::default());
+
+        let t = faixa();
+        c.put(&t, &letra()).unwrap();
+        c.mark_miss("outra|faixa|sem letra").unwrap();
+
+        let s = c.stats().unwrap();
+        assert_eq!(s.tracks, 1);
+        assert_eq!(s.synced, 1, "esta tem linhas sincronizadas");
+        assert_eq!(s.pinned, 0);
+        assert_eq!(s.misses, 1);
+
+        c.set_pinned(&t.key(), true).unwrap();
+        assert_eq!(c.stats().unwrap().pinned, 1);
+    }
 
     #[test]
     fn instrumental_e_resposta_valida_no_cache() {

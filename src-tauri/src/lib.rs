@@ -44,6 +44,12 @@ fn geometry(app: &AppHandle) -> Geometry {
     Geometry::from(&*app.state::<AppState>().settings.lock().unwrap())
 }
 
+/// Devolve ao compositor a combinação que o app tinha tomado.
+fn clear_hotkey(app: &AppHandle) {
+    let atalho = app.state::<AppState>().settings.lock().unwrap().hotkey.clone();
+    overlay::hotkey::clear(&atalho);
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Snapshot {
@@ -89,12 +95,19 @@ fn save_settings(app: AppHandle, mut settings: Settings) -> Result<Settings, Str
     settings.sanitize();
 
     let state = app.state::<AppState>();
-    let geometria_mudou = {
-        let anterior = state.settings.lock().unwrap().clone();
-        anterior.width != settings.width
-            || anterior.height != settings.height
-            || anterior.margin_bottom != settings.margin_bottom
-    };
+    let anterior = state.settings.lock().unwrap().clone();
+    let geometria_mudou = anterior.width != settings.width
+        || anterior.height != settings.height
+        || anterior.margin_bottom != settings.margin_bottom;
+
+    if anterior.hotkey != settings.hotkey {
+        if let Err(e) = overlay::hotkey::apply(&anterior.hotkey, &settings.hotkey) {
+            // Gravar um atalho que o compositor recusou deixaria a UI
+            // mostrando uma combinação que não funciona.
+            eprintln!("[hotkey] {e}");
+            return Err(e);
+        }
+    }
 
     state
         .settings_store
@@ -124,6 +137,16 @@ fn save_settings(app: AppHandle, mut settings: Settings) -> Result<Settings, Str
 #[tauri::command]
 fn open_settings(app: AppHandle) {
     overlay::open_settings(&app);
+}
+
+#[tauri::command]
+fn close_settings(app: AppHandle) {
+    overlay::close_settings(&app);
+}
+
+#[tauri::command]
+fn cache_stats(state: tauri::State<'_, AppState>) -> Result<store::cache::CacheStats, String> {
+    state.cache.stats().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -350,9 +373,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             now_playing,
             current_lyrics,
+            cache_stats,
             get_settings,
             save_settings,
             open_settings,
+            close_settings,
             toggle_overlay,
             apply_compositor_rules,
             search_lyrics,
@@ -388,6 +413,15 @@ pub fn run() {
             });
 
             tray::setup(app)?;
+
+            // O compositor esquece binds quando reinicia; reaplicar na
+            // partida é o que dá permanência sem escrever na config do
+            // usuário.
+            if !settings.hotkey.is_empty() {
+                if let Err(e) = overlay::hotkey::apply("", &settings.hotkey) {
+                    eprintln!("[hotkey] {e}");
+                }
+            }
 
             // O Wayland ignora tamanho e posição pedidos pela janela; quem
             // decide é o compositor. Ver `overlay::apply_compositor_rules`.

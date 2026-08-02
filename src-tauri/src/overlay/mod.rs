@@ -5,6 +5,7 @@
 //! `docs/ARCHITECTURE.md`): `set_always_on_top` é no-op e a janela abre tiled.
 //! O que funciona é pedir ao compositor via IPC.
 
+pub mod hotkey;
 pub mod layer_shell;
 
 use std::time::Duration;
@@ -71,7 +72,7 @@ pub fn is_hyprland() -> bool {
     std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok()
 }
 
-fn hyprctl(args: &[&str]) -> Result<String, String> {
+pub(crate) fn hyprctl(args: &[&str]) -> Result<String, String> {
     let out = std::process::Command::new("hyprctl")
         .args(args)
         .output()
@@ -180,6 +181,12 @@ pub fn open_settings(app: &tauri::AppHandle) {
         return;
     }
     eprintln!("[overlay] janela de configurações não encontrada");
+}
+
+pub fn close_settings(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(SETTINGS_LABEL) {
+        let _ = window.hide();
+    }
 }
 
 pub fn hide(app: &tauri::AppHandle) {

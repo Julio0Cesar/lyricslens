@@ -41,6 +41,10 @@ pub struct Settings {
     pub hide_when_paused: bool,
     /// Ajuste fino da sincronia. Negativo adianta a letra.
     pub sync_offset_ms: i64,
+    /// Combinação que mostra e esconde o overlay, na notação do compositor —
+    /// `"SUPER, L"`. Vazio desliga. Quem registra é o compositor: Wayland não
+    /// deixa o app capturar teclas fora da própria janela.
+    pub hotkey: String,
 
     // ---- geometria ----
     pub width: u32,
@@ -83,6 +87,9 @@ impl Default for Settings {
             click_through: false,
             hide_when_paused: false,
             sync_offset_ms: 0,
+            // Vazio de propósito: registrar um atalho sem o usuário pedir
+            // roubaria uma combinação que ele já usa.
+            hotkey: String::new(),
 
             width: 780,
             height: 300,

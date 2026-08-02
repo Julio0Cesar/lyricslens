@@ -24,6 +24,7 @@ export type Settings = {
   clickThrough: boolean;
   hideWhenPaused: boolean;
   syncOffsetMs: number;
+  hotkey: string;
 
   width: number;
   height: number;
@@ -39,6 +40,7 @@ export type Settings = {
  */
 export function useSettings() {
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
   const pendente = useRef<number | undefined>(undefined);
 
   useEffect(() => {
@@ -62,12 +64,19 @@ export function useSettings() {
 
       window.clearTimeout(pendente.current);
       pendente.current = window.setTimeout(() => {
-        invoke("save_settings", { settings: proximo }).catch(console.error);
+        setErro(null);
+        // Uma recusa do backend — combinação que o compositor não aceitou,
+        // por exemplo — precisa aparecer, senão a UI mostra um estado que
+        // não foi gravado.
+        invoke("save_settings", { settings: proximo }).catch((e) => {
+          setErro(String(e));
+          invoke<Settings>("get_settings").then(setSettings);
+        });
       }, 150);
 
       return proximo;
     });
   }, []);
 
-  return { settings, update };
+  return { settings, erro, update };
 }
