@@ -73,8 +73,10 @@ impl Default for Settings {
             corner_radius: 16,
 
             show_context_lines: true,
-            show_track_info: true,
-            show_progress: true,
+            // O overlay é sobre a letra. Informação de faixa e progresso
+            // existem para quem quiser, mas atrapalham o padrão.
+            show_track_info: false,
+            show_progress: false,
             text_align: TextAlign::Left,
             karaoke: true,
 
