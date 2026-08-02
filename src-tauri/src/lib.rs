@@ -3,6 +3,7 @@ mod media;
 mod overlay;
 mod store;
 mod sync;
+mod tray;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -210,9 +211,28 @@ async fn consume(app: AppHandle, mut rx: mpsc::Receiver<MediaEvent>) {
     }
 }
 
+/// Interpreta o que veio na linha de comando.
+///
+/// É o caminho do atalho global: o Wayland não deixa um app registrar um
+/// atalho de sistema, então quem registra é o compositor, e ele executa
+/// `lyricslens toggle`. O plugin de instância única entrega esses argumentos
+/// para o processo que já está rodando em vez de abrir um segundo.
+fn handle_cli(app: &AppHandle, argv: &[String]) {
+    match argv.iter().skip(1).find(|a| !a.starts_with('-')).map(String::as_str) {
+        Some("toggle") => overlay::toggle(app),
+        Some("hide") => overlay::hide(app),
+        // Sem comando reconhecido, a intenção de reabrir o app é aparecer.
+        _ => overlay::show(app),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Precisa ser o primeiro plugin registrado.
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            handle_cli(app, &argv);
+        }))
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             now_playing,
@@ -222,9 +242,16 @@ pub fn run() {
             pin_lyrics,
             overlay::probe_environment,
             overlay::set_click_through,
-            overlay::set_always_on_top,
-            overlay::apply_hyprland_rules,
+            overlay::apply_compositor_rules,
+            overlay::toggle_overlay,
         ])
+        .on_window_event(|window, event| {
+            // Fechar esconde. O app vive na bandeja; sair é decisão explícita.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .setup(|app| {
             let db = app.path().app_data_dir()?.join("lyrics.db");
             app.manage(AppState {
@@ -234,6 +261,19 @@ pub fn run() {
                 provider: LrcLib::new()?,
                 generation: AtomicU64::new(0),
             });
+
+            tray::setup(app)?;
+
+            // O Wayland ignora tamanho e posição pedidos pela janela; quem
+            // decide é o compositor. Ver `overlay::apply_compositor_rules`.
+            if let Some(window) = app.get_webview_window(overlay::OVERLAY_LABEL) {
+                let iniciar_oculto = std::env::args().any(|a| a == "hide");
+                if iniciar_oculto {
+                    let _ = window.hide();
+                } else {
+                    tauri::async_runtime::spawn(overlay::apply_rules_when_mapped(window));
+                }
+            }
 
             let handle = app.handle().clone();
             let (tx, rx) = mpsc::channel(64);

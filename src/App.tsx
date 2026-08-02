@@ -145,7 +145,7 @@ function App() {
         <Button onClick={toggleClickThrough}>
           click-through: {String(clickThrough)}
         </Button>
-        <Button onClick={() => invoke("apply_hyprland_rules")}>flutuar + fixar</Button>
+        <Button onClick={() => invoke("apply_compositor_rules")}>recolocar</Button>
         <span className="ml-auto font-mono text-[10px] text-white/35">
           {state} · {lyrics ? `${lines.length} linhas · ${lyrics.source}` : status}
         </span>

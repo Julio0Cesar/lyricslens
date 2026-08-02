@@ -38,14 +38,50 @@ pnpm tauri dev
 - `libayatana-appindicator` (ícone na bandeja)
 - Um player que exponha MPRIS (Spotify, Chromium, VLC, …)
 
+## Uso
+
+O app vive na bandeja do sistema. Fechar a janela **esconde** o overlay; sair é
+decisão explícita, pelo menu da bandeja.
+
+- **clique esquerdo** no ícone — mostra/esconde o overlay
+- **clique direito** — menu com recolocar e sair
+
+### Atalho global
+
+Wayland não deixa um aplicativo registrar um atalho de sistema — quem registra é
+o compositor. O app aceita comandos na linha de comando e os entrega para a
+instância que já está rodando:
+
+```bash
+lyricslens toggle   # mostra ou esconde
+lyricslens hide
+lyricslens          # mostra
+```
+
+No Hyprland, adicione em `~/.config/hypr/hyprland/keybinds.conf`:
+
+```conf
+bind = Super, L, exec, lyricslens toggle
+```
+
+Em desenvolvimento, use o caminho do binário:
+`src-tauri/target/debug/lyricslens toggle`.
+
+### Posicionamento
+
+O Wayland também não deixa a janela escolher onde fica nem ficar por cima —
+quem decide é o compositor. No Hyprland o app pede isso via IPC ao aparecer, e
+o overlay se coloca no rodapé central. Em outros compositores a janela abre
+onde o sistema mandar; use "recolocar" depois de mover.
+
 ## Status
 
 | Área | Estado |
 |---|---|
 | Detecção de mídia (MPRIS) | **pronto** |
 | Letras sincronizadas (LRCLIB) | **pronto** |
-| Overlay always-on-top | em investigação |
-| Tray + atalho global | planejado |
+| Overlay always-on-top | **pronto** (Hyprland; fullscreen pendente) |
+| Tray + atalho global | **pronto** |
 | Cache local (SQLite) | **pronto** |
 | Modo offline | parcial — cache pronto, UI pendente |
 | Tradução | adiado — ver issues |
