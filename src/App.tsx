@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AnimatePresence, motion } from "motion/react";
 import { formatMs, useNowPlaying } from "./media/useNowPlaying";
 import LyricLines from "./lyrics/LyricLines";
@@ -56,44 +57,57 @@ function useAtraso(ativo: boolean, ms: number): boolean {
 }
 
 /**
- * Em Wayland a janela não sabe onde está, e arrastar não avisa ninguém. Depois
- * de soltar, perguntamos ao compositor e guardamos — senão a posição se perde
- * na próxima vez que o overlay for escondido e mostrado.
+ * Arraste manual, em vez de `data-tauri-drag-region`.
+ *
+ * A região de arraste do Tauri chama o arraste do compositor já no
+ * `mousedown` — e a partir daí o ponteiro é do compositor, então o segundo
+ * clique de um duplo clique nunca chega ao webview. Aqui o arraste só começa
+ * quando o ponteiro **se move**, então um clique parado continua sendo um
+ * clique.
+ *
+ * Em Wayland a janela também não sabe onde está e soltar não avisa ninguém;
+ * ao recuperar o foco, perguntamos ao compositor e guardamos.
  */
-function useLembrarPosicao() {
+function useArrastar() {
   useEffect(() => {
-    let arrastando = false;
-
-    const comecou = (e: MouseEvent) => {
-      if (e.button === 0) arrastando = true;
+    const salvar = () => {
+      invoke("remember_overlay_position").catch(() => {});
     };
-    const soltou = () => {
-      if (!arrastando) return;
-      arrastando = false;
-      // O compositor precisa de um instante para assentar a nova posição.
-      window.setTimeout(() => invoke("remember_overlay_position"), 250);
-    };
-
-    window.addEventListener("mousedown", comecou);
-    window.addEventListener("mouseup", soltou);
-    // Durante um arraste interativo o webview costuma perder o mouseup;
-    // voltar o foco é o outro sinal confiável de que acabou.
-    window.addEventListener("focus", soltou);
-
-    return () => {
-      window.removeEventListener("mousedown", comecou);
-      window.removeEventListener("mouseup", soltou);
-      window.removeEventListener("focus", soltou);
-    };
+    window.addEventListener("focus", salvar);
+    return () => window.removeEventListener("focus", salvar);
   }, []);
+
+  return (e: React.MouseEvent) => {
+    // `detail > 1` é o segundo clique de um duplo: nunca vira arraste.
+    if (e.button !== 0 || e.detail > 1) return;
+
+    const origem = { x: e.clientX, y: e.clientY };
+
+    const mover = (m: MouseEvent) => {
+      if (Math.hypot(m.clientX - origem.x, m.clientY - origem.y) < 4) return;
+      limpar();
+      getCurrentWindow().startDragging().catch(() => {});
+    };
+    const limpar = () => {
+      window.removeEventListener("mousemove", mover);
+      window.removeEventListener("mouseup", limpar);
+    };
+
+    window.addEventListener("mousemove", mover);
+    window.addEventListener("mouseup", limpar);
+  };
 }
 
 function App() {
+  // Todos os hooks antes de qualquer saída antecipada: o React exige que a
+  // ordem e a quantidade sejam iguais em toda renderização, e um `return`
+  // no meio derruba o componente inteiro quando as preferências chegam.
   const { track, positionMs } = useNowPlaying();
-  useLembrarPosicao();
   const identity = track ? `${track.artist}|${track.title}` : null;
   const { status, lyrics } = useLyrics(identity);
   const { settings } = useSettings();
+  const buscaDemorada = useAtraso(status === "searching", 700);
+  const iniciarArraste = useArrastar();
 
   if (!settings) return null;
 
@@ -101,8 +115,6 @@ function App() {
   const idx = lineAt(lines, positionMs);
   const progress = lineProgress(lines, idx, positionMs);
   const temLetraSincronizada = lines.length > 0;
-
-  const buscaDemorada = useAtraso(status === "searching", 700);
 
   const aviso = !track
     ? "nada tocando"
@@ -121,7 +133,7 @@ function App() {
   return (
     <div className="flex h-full flex-col p-2 font-sans">
       <div
-        data-tauri-drag-region
+        onMouseDown={iniciarArraste}
         onDoubleClick={() => invoke("open_settings")}
         // O menu do WebKit não tem nada de útil aqui e quebra a ilusão de
         // que isto é só a letra na tela.
