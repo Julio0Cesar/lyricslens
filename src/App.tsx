@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion } from "motion/react";
 import { formatMs, useNowPlaying } from "./media/useNowPlaying";
 import { lineAt, lineProgress, useLyrics } from "./lyrics/useLyrics";
@@ -125,15 +126,28 @@ function App() {
                   )}
                 </>
               ) : (
-                <div className="text-sm" style={{ color: settings.dimColor }}>
-                  {status === "searching" && "procurando a letra…"}
-                  {status === "notFound" && "sem letra para esta faixa"}
-                  {status === "found" && lyrics?.instrumental && "instrumental"}
-                  {status === "found" &&
-                    !lyrics?.instrumental &&
-                    lyrics?.plain &&
-                    "letra encontrada, mas sem sincronia"}
-                  {status === "idle" && "…"}
+                <div
+                  className="flex items-center gap-3 text-sm"
+                  style={{ color: settings.dimColor }}
+                >
+                  <span>
+                    {status === "searching" && "procurando a letra…"}
+                    {status === "notFound" && "sem letra para esta faixa"}
+                    {status === "found" && lyrics?.instrumental && "instrumental"}
+                    {status === "found" &&
+                      !lyrics?.instrumental &&
+                      lyrics?.plain &&
+                      "letra encontrada, mas sem sincronia"}
+                    {status === "idle" && "…"}
+                  </span>
+                  {(status === "notFound" || status === "found") && (
+                    <button
+                      onClick={() => invoke("open_settings")}
+                      className="rounded border border-white/15 px-2 py-0.5 text-[11px] hover:bg-white/10"
+                    >
+                      escolher letra
+                    </button>
+                  )}
                 </div>
               )}
             </div>

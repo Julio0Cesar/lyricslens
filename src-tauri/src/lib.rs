@@ -161,6 +161,43 @@ fn pin_lyrics(state: tauri::State<'_, AppState>, track_key: String, pinned: bool
         .map_err(|e| e.to_string())
 }
 
+/// Adota uma letra escolhida a dedo pelo usuário.
+///
+/// Grava no cache sob a chave da faixa atual — é isso que faz a escolha valer
+/// para as próximas vezes que a mesma música tocar, sem precisar escolher de
+/// novo.
+#[tauri::command]
+async fn apply_candidate(app: AppHandle, provider_id: String) -> Result<(), String> {
+    let track = {
+        let state = app.state::<AppState>();
+        let np = state.now_playing.lock().unwrap();
+        np.track.clone().ok_or("nada tocando agora")?
+    };
+
+    let lyrics = {
+        let state = app.state::<AppState>();
+        state
+            .provider
+            .fetch_by_id(&provider_id)
+            .await
+            .map_err(|e| e.to_string())?
+    };
+
+    let state = app.state::<AppState>();
+    state
+        .cache
+        .put(&track, &lyrics)
+        .map_err(|e| format!("não consegui guardar a escolha: {e}"))?;
+
+    let evento = LyricsEvent::Found {
+        track_key: track.key(),
+        lyrics,
+    };
+    *state.last_lyrics.lock().unwrap() = Some(evento.clone());
+    let _ = app.emit("lyrics", evento);
+    Ok(())
+}
+
 /// Cache primeiro, rede depois — e nunca duas vezes para a mesma ausência.
 async fn resolve_lyrics(app: AppHandle, track: Track, generation: u64) {
     let key = track.key();
@@ -319,6 +356,7 @@ pub fn run() {
             toggle_overlay,
             apply_compositor_rules,
             search_lyrics,
+            apply_candidate,
             pin_lyrics,
             overlay::probe_environment,
             overlay::set_click_through,

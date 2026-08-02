@@ -78,14 +78,6 @@ impl Cache {
                 fetched_at       INTEGER NOT NULL
             );
 
-            -- Título bagunçado que o usuário já resolveu na mão uma vez.
-            CREATE TABLE IF NOT EXISTS mappings (
-                source_key  TEXT PRIMARY KEY,
-                source      TEXT NOT NULL,
-                provider    TEXT NOT NULL,
-                provider_id TEXT NOT NULL,
-                created_at  INTEGER NOT NULL
-            );
 
             -- Faixas para as quais não existe letra, para não repetir a busca.
             CREATE TABLE IF NOT EXISTS misses (
@@ -227,39 +219,6 @@ impl Cache {
         Ok(())
     }
 
-    /// Escolha manual do usuário para um título que a busca não resolve.
-    #[allow(dead_code, reason = "a UI de resolução manual é da fase 3")]
-    pub fn save_mapping(
-        &self,
-        source_key: &str,
-        source: &str,
-        provider: &str,
-        provider_id: &str,
-    ) -> Result<(), CacheError> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "INSERT INTO mappings (source_key, source, provider, provider_id, created_at)
-             VALUES (?1,?2,?3,?4,?5)
-             ON CONFLICT(source_key) DO UPDATE SET
-                 provider    = excluded.provider,
-                 provider_id = excluded.provider_id,
-                 created_at  = excluded.created_at",
-            params![source_key, source, provider, provider_id, agora()],
-        )?;
-        Ok(())
-    }
-
-    #[allow(dead_code, reason = "a UI de resolução manual é da fase 3")]
-    pub fn find_mapping(&self, source_key: &str) -> Result<Option<(String, String)>, CacheError> {
-        let conn = self.conn.lock().unwrap();
-        Ok(conn
-            .query_row(
-                "SELECT provider, provider_id FROM mappings WHERE source_key = ?1",
-                params![source_key],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()?)
-    }
 }
 
 #[cfg(test)]
@@ -342,22 +301,6 @@ mod tests {
         assert!(c.should_retry(&t.key()).unwrap(), "achou: o fracasso caducou");
     }
 
-    #[test]
-    fn mapeamento_manual_sobrevive_e_atualiza() {
-        let c = Cache::in_memory().unwrap();
-        c.save_mapping("yt:abc123", "firefox", "lrclib", "707294").unwrap();
-        assert_eq!(
-            c.find_mapping("yt:abc123").unwrap(),
-            Some(("lrclib".into(), "707294".into()))
-        );
-
-        c.save_mapping("yt:abc123", "firefox", "lrclib", "999").unwrap();
-        assert_eq!(
-            c.find_mapping("yt:abc123").unwrap().unwrap().1,
-            "999",
-            "a escolha mais recente vence"
-        );
-    }
 
     #[test]
     fn instrumental_e_resposta_valida_no_cache() {

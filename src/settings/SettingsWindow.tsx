@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ColorPicker, Row, Section, Select, Slider, Toggle } from "./controls";
+import LyricsPicker from "./LyricsPicker";
 import { useSettings } from "./useSettings";
 
 export default function SettingsWindow() {
@@ -27,6 +28,8 @@ export default function SettingsWindow() {
             mostrar / ocultar overlay
           </button>
         </header>
+
+        <LyricsPicker />
 
         <Section title="Aparência">
           <Row label="Fonte" hint={fontes.length ? `${fontes.length} instaladas` : "do sistema"}>
