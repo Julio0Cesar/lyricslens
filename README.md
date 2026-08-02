@@ -43,10 +43,11 @@ pnpm tauri dev
 | Área | Estado |
 |---|---|
 | Detecção de mídia (MPRIS) | **pronto** |
-| Letras sincronizadas (LRCLIB) | planejado |
+| Letras sincronizadas (LRCLIB) | **pronto** |
 | Overlay always-on-top | em investigação |
 | Tray + atalho global | planejado |
-| Modo offline | planejado |
+| Cache local (SQLite) | **pronto** |
+| Modo offline | parcial — cache pronto, UI pendente |
 | Tradução | adiado — ver issues |
 
 ## Licença

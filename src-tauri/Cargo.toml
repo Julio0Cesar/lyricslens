@@ -26,4 +26,6 @@ zbus = { version = "5.18.0", default-features = false, features = ["tokio"] }
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "sync"] }
 futures-util = "0.3.33"
 thiserror = "2.0.19"
+rusqlite = { version = "0.40.1", features = ["bundled"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls", "http2", "charset", "gzip", "query"] }
 
