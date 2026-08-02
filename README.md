@@ -80,10 +80,11 @@ onde o sistema mandar; use "recolocar" depois de mover.
 |---|---|
 | Detecção de mídia (MPRIS) | **pronto** |
 | Letras sincronizadas (LRCLIB) | **pronto** |
-| Overlay always-on-top | **pronto** (Hyprland; fullscreen pendente) |
+| Overlay always-on-top | **pronto**, inclusive sobre tela cheia |
 | Tray + atalho global | **pronto** |
 | Cache local (SQLite) | **pronto** |
 | Janela de configurações | **pronto** |
+| Escolha manual da letra | **pronto** |
 | Modo offline | parcial — cache pronto, UI pendente |
 | Tradução | adiado — ver issues |
 

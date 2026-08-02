@@ -28,6 +28,7 @@ export type Settings = {
   width: number;
   height: number;
   marginBottom: number;
+  layerShell: boolean;
 };
 
 /**

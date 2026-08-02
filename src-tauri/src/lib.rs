@@ -392,16 +392,22 @@ pub fn run() {
             // O Wayland ignora tamanho e posição pedidos pela janela; quem
             // decide é o compositor. Ver `overlay::apply_compositor_rules`.
             if let Some(window) = app.get_webview_window(overlay::OVERLAY_LABEL) {
+                let mut geo = Geometry::from(&settings);
                 let _ = window.set_ignore_cursor_events(settings.click_through);
 
-                let iniciar_oculto = std::env::args().any(|a| a == "hide");
-                if iniciar_oculto {
-                    let _ = window.hide();
-                } else {
-                    tauri::async_runtime::spawn(overlay::apply_rules_when_mapped(
-                        window,
-                        Geometry::from(&settings),
-                    ));
+                // Antes de qualquer `show`: depois de realizada, a janela não
+                // troca mais de tipo de superfície.
+                if geo.layer_shell {
+                    if let Err(e) = overlay::layer_shell::init(&window, geo) {
+                        eprintln!("[overlay] camada indisponível, usando janela comum: {e}");
+                        geo.layer_shell = false;
+                        app.state::<AppState>().settings.lock().unwrap().layer_shell = false;
+                    }
+                }
+
+                if !std::env::args().any(|a| a == "hide") {
+                    let _ = window.show();
+                    tauri::async_runtime::spawn(overlay::apply_rules_when_mapped(window, geo));
                 }
             }
 

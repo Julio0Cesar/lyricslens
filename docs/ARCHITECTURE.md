@@ -31,10 +31,32 @@ ticks com `requestAnimationFrame`. Resultado: karaokê a 60fps com CPU perto de 
 | `hyprctl setfloating` + `pin` | Funciona; geometria exata aceita |
 | `transparent: true` | Funciona — o desktop aparece através da janela |
 | `decorations: false` | Funciona |
-| Sobreviver a fullscreen | **Não.** Só `gtk-layer-shell` resolve |
+| Sobreviver a fullscreen | **Não** como janela; **sim** como camada |
 
 Em Wayland o cliente não pode se posicionar nem se colocar acima dos outros: isso é
 decisão do compositor, por design do protocolo. Daí a dupla estratégia.
+
+### Camada do compositor (`wlr-layer-shell`)
+
+Medido: com `gtk-layer-shell`, a janela deixa de ser uma janela. Some de
+`hyprctl clients` e aparece em `hyprctl layers` no **nível 3** — a camada
+`overlay` — posicionada em `(570,700) 780x300`. Confirmado por captura de tela:
+com um terminal em tela cheia, o overlay continua visível por cima.
+
+Três detalhes que a implementação precisa acertar:
+
+- **`init_layer_shell` antes de a janela ser realizada.** Depois disso o tipo da
+  superfície já está definido no protocolo e não muda. Por isso a janela nasce
+  com `visible: false` e só aparece depois da inicialização — e por isso a opção
+  exige reiniciar o app.
+- **Zona exclusiva `-1`.** Sem isso o compositor encolhe as outras janelas para
+  abrir espaço, como faz com uma barra de tarefas.
+- **`KeyboardMode::None`.** Sem isso a camada rouba o teclado do que estiver em
+  foco.
+
+**O que se perde:** uma camada não é arrastável. A posição passa a vir só das
+preferências (âncora inferior + margem), não do mouse. Por isso a opção é
+desligada por padrão — é uma troca, não uma melhoria pura.
 
 ## Camadas
 

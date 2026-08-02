@@ -5,6 +5,8 @@
 //! `docs/ARCHITECTURE.md`): `set_always_on_top` é no-op e a janela abre tiled.
 //! O que funciona é pedir ao compositor via IPC.
 
+pub mod layer_shell;
+
 use std::time::Duration;
 
 use serde::Serialize;
@@ -19,6 +21,9 @@ pub struct Geometry {
     pub width: i32,
     pub height: i32,
     pub margin_bottom: i32,
+    /// Quando a janela é uma camada do compositor, quem posiciona é o
+    /// protocolo — as regras via IPC não se aplicam e atrapalhariam.
+    pub layer_shell: bool,
 }
 
 impl From<&crate::store::Settings> for Geometry {
@@ -27,6 +32,7 @@ impl From<&crate::store::Settings> for Geometry {
             width: s.width as i32,
             height: s.height as i32,
             margin_bottom: s.margin_bottom as i32,
+            layer_shell: s.layer_shell,
         }
     }
 }
@@ -80,6 +86,10 @@ fn hyprctl(args: &[&str]) -> Result<String, String> {
 /// O seletor tem que ser específico: sem `title:`, a regra pegaria também a
 /// janela de configurações, que é do mesmo processo e da mesma classe.
 pub fn apply_rules(window: &WebviewWindow, geo: Geometry) -> Result<String, String> {
+    if geo.layer_shell {
+        layer_shell::update_geometry(window, geo);
+        return Ok("posição vem do protocolo de camadas".into());
+    }
     if !is_hyprland() {
         return Ok("compositor sem regras conhecidas — janela fica como o sistema decidir".into());
     }
@@ -112,7 +122,7 @@ pub fn apply_rules(window: &WebviewWindow, geo: Geometry) -> Result<String, Stri
 /// As regras só pegam depois que o compositor conhece a janela. Em vez de um
 /// `sleep` no escuro, espera ela aparecer na lista de clientes.
 pub async fn apply_rules_when_mapped(window: WebviewWindow, geo: Geometry) {
-    if !is_hyprland() {
+    if geo.layer_shell || !is_hyprland() {
         return;
     }
 

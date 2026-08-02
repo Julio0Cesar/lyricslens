@@ -176,6 +176,12 @@ export default function SettingsWindow() {
               onChange={(v) => update({ marginBottom: v })}
             />
           </Row>
+          <Row
+            label="Camada do compositor"
+            hint="fica acima até de tela cheia · exige reiniciar o app"
+          >
+            <Toggle value={settings.layerShell} onChange={(v) => update({ layerShell: v })} />
+          </Row>
           <Row label="" hint="reaplica flutuar, fixar, tamanho e posição">
             <button
               onClick={() => invoke("apply_compositor_rules")}

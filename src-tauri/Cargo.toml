@@ -29,4 +29,6 @@ thiserror = "2.0.19"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls", "http2", "charset", "gzip", "query"] }
 tauri-plugin-single-instance = "2.4.3"
+gtk-layer-shell = { version = "0.8.2", features = ["v0_6"] }
+gtk = "0.18"
 
