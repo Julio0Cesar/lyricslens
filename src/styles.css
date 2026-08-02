@@ -13,3 +13,9 @@ body,
 @theme {
   --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
+
+/* Arrastar a janela selecionaria o texto da letra no caminho. */
+body[data-window="overlay"] {
+  user-select: none;
+  cursor: default;
+}

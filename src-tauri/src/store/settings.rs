@@ -50,6 +50,9 @@ pub struct Settings {
     pub width: u32,
     pub height: u32,
     pub margin_bottom: u32,
+    /// Onde o usuário largou a janela. `None` = rodapé central automático.
+    pub position_x: Option<i32>,
+    pub position_y: Option<i32>,
     /// Overlay como camada do compositor: fica acima até de tela cheia.
     /// Só tem efeito ao iniciar o app — o tipo da superfície é definido
     /// antes de a janela existir e não pode ser trocado depois.
@@ -94,6 +97,8 @@ impl Default for Settings {
             width: 780,
             height: 300,
             margin_bottom: 80,
+            position_x: None,
+            position_y: None,
             layer_shell: false,
         }
     }

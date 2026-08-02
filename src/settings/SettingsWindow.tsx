@@ -204,8 +204,24 @@ export default function SettingsWindow() {
             />
           </Row>
           <Row
+            label="Posição"
+            hint={
+              settings.positionX !== null
+                ? `fixada em ${settings.positionX}, ${settings.positionY}`
+                : "rodapé central · arraste o overlay para mudar"
+            }
+          >
+            <button
+              onClick={() => invoke("center_overlay")}
+              disabled={settings.positionX === null}
+              className="rounded-md border border-white/15 bg-white/6 px-2 py-1 text-[11px] text-white/70 hover:bg-white/12 disabled:opacity-40"
+            >
+              centralizar
+            </button>
+          </Row>
+          <Row
             label="Camada do compositor"
-            hint="fica acima até de tela cheia · exige reiniciar o app"
+            hint="fica acima até de tela cheia, mas deixa de ser arrastável · exige reiniciar o app"
           >
             <Toggle value={settings.layerShell} onChange={(v) => update({ layerShell: v })} />
           </Row>

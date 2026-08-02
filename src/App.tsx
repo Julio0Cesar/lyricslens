@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion } from "motion/react";
 import { formatMs, useNowPlaying } from "./media/useNowPlaying";
@@ -33,8 +34,63 @@ function Aviso({ texto, settings }: { texto: string; settings: Settings }) {
   );
 }
 
+/**
+ * Só vira `true` depois de `ms` com a condição ativa.
+ *
+ * Serve para não piscar "procurando a letra…" numa busca que dura 300ms — o
+ * aviso aparecendo e sumindo é mais perturbador que o intervalo em branco.
+ */
+function useAtraso(ativo: boolean, ms: number): boolean {
+  const [passou, setPassou] = useState(false);
+
+  useEffect(() => {
+    if (!ativo) {
+      setPassou(false);
+      return;
+    }
+    const t = window.setTimeout(() => setPassou(true), ms);
+    return () => window.clearTimeout(t);
+  }, [ativo, ms]);
+
+  return passou;
+}
+
+/**
+ * Em Wayland a janela não sabe onde está, e arrastar não avisa ninguém. Depois
+ * de soltar, perguntamos ao compositor e guardamos — senão a posição se perde
+ * na próxima vez que o overlay for escondido e mostrado.
+ */
+function useLembrarPosicao() {
+  useEffect(() => {
+    let arrastando = false;
+
+    const comecou = (e: MouseEvent) => {
+      if (e.button === 0) arrastando = true;
+    };
+    const soltou = () => {
+      if (!arrastando) return;
+      arrastando = false;
+      // O compositor precisa de um instante para assentar a nova posição.
+      window.setTimeout(() => invoke("remember_overlay_position"), 250);
+    };
+
+    window.addEventListener("mousedown", comecou);
+    window.addEventListener("mouseup", soltou);
+    // Durante um arraste interativo o webview costuma perder o mouseup;
+    // voltar o foco é o outro sinal confiável de que acabou.
+    window.addEventListener("focus", soltou);
+
+    return () => {
+      window.removeEventListener("mousedown", comecou);
+      window.removeEventListener("mouseup", soltou);
+      window.removeEventListener("focus", soltou);
+    };
+  }, []);
+}
+
 function App() {
   const { track, positionMs } = useNowPlaying();
+  useLembrarPosicao();
   const identity = track ? `${track.artist}|${track.title}` : null;
   const { status, lyrics } = useLyrics(identity);
   const { settings } = useSettings();
@@ -46,10 +102,14 @@ function App() {
   const progress = lineProgress(lines, idx, positionMs);
   const temLetraSincronizada = lines.length > 0;
 
+  const buscaDemorada = useAtraso(status === "searching", 700);
+
   const aviso = !track
     ? "nada tocando"
     : status === "searching"
-      ? "procurando a letra…"
+      ? buscaDemorada
+        ? "procurando a letra…"
+        : null
       : status === "notFound"
         ? "sem letra para esta faixa"
         : lyrics?.instrumental
@@ -63,6 +123,9 @@ function App() {
       <div
         data-tauri-drag-region
         onDoubleClick={() => invoke("open_settings")}
+        // O menu do WebKit não tem nada de útil aqui e quebra a ilusão de
+        // que isto é só a letra na tela.
+        onContextMenu={(e) => e.preventDefault()}
         style={{
           background: rgba(settings.backgroundColor, settings.backgroundOpacity),
           borderRadius: `${settings.cornerRadius}px`,

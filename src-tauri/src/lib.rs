@@ -149,6 +149,51 @@ fn cache_stats(state: tauri::State<'_, AppState>) -> Result<store::cache::CacheS
     state.cache.stats().map_err(|e| e.to_string())
 }
 
+/// Guarda onde o usuário largou a janela, para ela voltar ao mesmo lugar
+/// depois de esconder e mostrar de novo.
+#[tauri::command]
+fn remember_overlay_position(app: AppHandle) -> Option<(i32, i32)> {
+    let Some((x, y)) = overlay::current_position() else {
+        return None;
+    };
+
+    let state = app.state::<AppState>();
+    let mut settings = state.settings.lock().unwrap();
+    if settings.position_x == Some(x) && settings.position_y == Some(y) {
+        return Some((x, y));
+    }
+
+    settings.position_x = Some(x);
+    settings.position_y = Some(y);
+    let _ = state.settings_store.save(&settings);
+    let copia = settings.clone();
+    drop(settings);
+
+    let _ = app.emit("settings", &copia);
+    Some((x, y))
+}
+
+/// Devolve o overlay ao rodapé central.
+#[tauri::command]
+fn center_overlay(app: AppHandle) -> Result<(), String> {
+    {
+        let state = app.state::<AppState>();
+        let mut settings = state.settings.lock().unwrap();
+        settings.position_x = None;
+        settings.position_y = None;
+        let _ = state.settings_store.save(&settings);
+        let copia = settings.clone();
+        drop(settings);
+        let _ = app.emit("settings", &copia);
+    }
+
+    let geo = geometry(&app);
+    match app.get_webview_window(overlay::OVERLAY_LABEL) {
+        Some(window) => overlay::apply_rules(&window, geo).map(|_| ()),
+        None => Ok(()),
+    }
+}
+
 #[tauri::command]
 fn toggle_overlay(app: AppHandle) {
     let geo = geometry(&app);
@@ -374,6 +419,8 @@ pub fn run() {
             now_playing,
             current_lyrics,
             cache_stats,
+            remember_overlay_position,
+            center_overlay,
             get_settings,
             save_settings,
             open_settings,

@@ -27,7 +27,13 @@ const POLL: Duration = Duration::from_millis(100);
 /// A cada quantos ticks reavaliamos quem é o player ativo.
 const RESCAN_EVERY: u64 = 20;
 /// A cada quantos ticks relemos metadados e estado de reprodução.
-const METADATA_EVERY: u64 = 5;
+///
+/// Todo tick, e isso é barato: o `zbus` mantém as propriedades num cache
+/// alimentado pelo próprio `PropertiesChanged`, então reler não é ida ao
+/// barramento. O ganho é direto na experiência — a troca de faixa passa a ser
+/// notada em até 100ms em vez de até 500ms, que era metade do intervalo até a
+/// letra nova aparecer.
+const METADATA_EVERY: u64 = 1;
 /// Intervalo mínimo entre âncoras enviadas, fora saltos.
 const ANCHOR_THROTTLE: Duration = Duration::from_millis(500);
 

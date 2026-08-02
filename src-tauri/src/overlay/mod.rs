@@ -22,6 +22,8 @@ pub struct Geometry {
     pub width: i32,
     pub height: i32,
     pub margin_bottom: i32,
+    /// Onde o usuário largou a janela. `None` recentraliza no rodapé.
+    pub position: Option<(i32, i32)>,
     /// Quando a janela é uma camada do compositor, quem posiciona é o
     /// protocolo — as regras via IPC não se aplicam e atrapalhariam.
     pub layer_shell: bool,
@@ -33,6 +35,7 @@ impl From<&crate::store::Settings> for Geometry {
             width: s.width as i32,
             height: s.height as i32,
             margin_bottom: s.margin_bottom as i32,
+            position: s.position_x.zip(s.position_y),
             layer_shell: s.layer_shell,
         }
     }
@@ -104,12 +107,20 @@ pub fn apply_rules(window: &WebviewWindow, geo: Geometry) -> Result<String, Stri
         &format!("exact {} {},{seletor}", geo.width, geo.height),
     ])?;
 
-    // Canto inferior central do monitor onde a janela está.
-    if let Ok(Some(monitor)) = window.current_monitor() {
-        let pos = monitor.position();
-        let size = monitor.size();
-        let x = pos.x + (size.width as i32 - geo.width) / 2;
-        let y = pos.y + size.height as i32 - geo.height - geo.margin_bottom;
+    // Posição escolhida pelo usuário; sem ela, rodapé central do monitor.
+    let destino = match geo.position {
+        Some(xy) => Some(xy),
+        None => window.current_monitor().ok().flatten().map(|monitor| {
+            let pos = monitor.position();
+            let size = monitor.size();
+            (
+                pos.x + (size.width as i32 - geo.width) / 2,
+                pos.y + size.height as i32 - geo.height - geo.margin_bottom,
+            )
+        }),
+    };
+
+    if let Some((x, y)) = destino {
         hyprctl(&[
             "dispatch",
             "movewindowpixel",
@@ -118,6 +129,25 @@ pub fn apply_rules(window: &WebviewWindow, geo: Geometry) -> Result<String, Stri
     }
 
     Ok("regras aplicadas".into())
+}
+
+/// Onde a janela está agora, segundo o compositor.
+///
+/// Em Wayland o cliente não sabe a própria posição — o protocolo não conta.
+/// Quem sabe é o compositor, então é a ele que se pergunta.
+pub fn current_position() -> Option<(i32, i32)> {
+    if !is_hyprland() {
+        return None;
+    }
+    let json = hyprctl(&["-j", "clients"]).ok()?;
+    let clients: serde_json::Value = serde_json::from_str(&json).ok()?;
+
+    clients.as_array()?.iter().find_map(|c| {
+        (c.get("title")?.as_str()? == "LyricsLens Overlay").then(|| {
+            let at = c.get("at")?.as_array()?;
+            Some((at.first()?.as_i64()? as i32, at.get(1)?.as_i64()? as i32))
+        })?
+    })
 }
 
 /// As regras só pegam depois que o compositor conhece a janela. Em vez de um
