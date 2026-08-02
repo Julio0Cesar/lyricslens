@@ -12,9 +12,16 @@
   "app": {
     "windows": [
       {
-        "title": "lyricslens",
-        "width": 800,
-        "height": 600
+        "label": "overlay",
+        "title": "LyricsLens Overlay",
+        "width": 760,
+        "height": 260,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "resizable": true
       }
     ],
     "security": {

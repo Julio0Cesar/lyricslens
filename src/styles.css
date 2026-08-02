@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+/* O overlay é uma janela transparente: nada aqui pode pintar um fundo opaco.
+   O que aparece atrás é o desktop, não a página. */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+}
+
+@theme {
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
