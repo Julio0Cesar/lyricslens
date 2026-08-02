@@ -10,8 +10,9 @@ use std::sync::Mutex;
 
 use lyrics::{lrclib::LrcLib, Candidate, Lyrics, LyricsProvider};
 use media::{MediaEvent, MediaProvider, PlatformProvider, PlaybackState, Track};
+use overlay::Geometry;
 use serde::Serialize;
-use store::Cache;
+use store::{Cache, Settings, SettingsStore};
 use sync::Clock;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc;
@@ -31,9 +32,16 @@ struct AppState {
     last_lyrics: Mutex<Option<LyricsEvent>>,
     cache: Cache,
     provider: LrcLib,
+    settings: Mutex<Settings>,
+    settings_store: SettingsStore,
     /// Sobe a cada troca de faixa. Uma busca que volta atrasada compara a
     /// geração com a atual e se descarta em vez de escrever letra errada.
     generation: AtomicU64,
+}
+
+/// Geometria atual do overlay, conforme as preferências.
+fn geometry(app: &AppHandle) -> Geometry {
+    Geometry::from(&*app.state::<AppState>().settings.lock().unwrap())
 }
 
 #[derive(Serialize)]
@@ -69,10 +77,65 @@ fn current_lyrics(state: tauri::State<'_, AppState>) -> Option<LyricsEvent> {
     state.last_lyrics.lock().unwrap().clone()
 }
 
-/// Ajuste fino da sincronia, em milissegundos.
 #[tauri::command]
-fn set_sync_offset(state: tauri::State<'_, AppState>, offset_ms: i64) {
-    state.now_playing.lock().unwrap().clock.set_offset_ms(offset_ms);
+fn get_settings(state: tauri::State<'_, AppState>) -> Settings {
+    state.settings.lock().unwrap().clone()
+}
+
+/// Grava as preferências e propaga o efeito de cada uma para onde ela vale:
+/// o relógio, a geometria da janela, e as janelas abertas.
+#[tauri::command]
+fn save_settings(app: AppHandle, mut settings: Settings) -> Result<Settings, String> {
+    settings.sanitize();
+
+    let state = app.state::<AppState>();
+    let geometria_mudou = {
+        let anterior = state.settings.lock().unwrap().clone();
+        anterior.width != settings.width
+            || anterior.height != settings.height
+            || anterior.margin_bottom != settings.margin_bottom
+    };
+
+    state
+        .settings_store
+        .save(&settings)
+        .map_err(|e| format!("não consegui gravar as preferências: {e}"))?;
+
+    state
+        .now_playing
+        .lock()
+        .unwrap()
+        .clock
+        .set_offset_ms(settings.sync_offset_ms);
+    *state.settings.lock().unwrap() = settings.clone();
+
+    if let Some(window) = app.get_webview_window(overlay::OVERLAY_LABEL) {
+        let _ = window.set_ignore_cursor_events(settings.click_through);
+        if geometria_mudou {
+            let _ = overlay::apply_rules(&window, Geometry::from(&settings));
+        }
+    }
+
+    // A janela de configurações e o overlay reagem juntos.
+    let _ = app.emit("settings", &settings);
+    Ok(settings)
+}
+
+#[tauri::command]
+fn open_settings(app: AppHandle) {
+    overlay::open_settings(&app);
+}
+
+#[tauri::command]
+fn toggle_overlay(app: AppHandle) {
+    let geo = geometry(&app);
+    overlay::toggle(&app, geo);
+}
+
+#[tauri::command]
+fn apply_compositor_rules(app: AppHandle, window: tauri::WebviewWindow) -> Result<String, String> {
+    let geo = geometry(&app);
+    overlay::apply_rules(&window, geo)
 }
 
 /// Alternativas para o usuário escolher quando a busca automática erra.
@@ -174,6 +237,7 @@ async fn resolve_lyrics(app: AppHandle, track: Track, generation: u64) {
 async fn consume(app: AppHandle, mut rx: mpsc::Receiver<MediaEvent>) {
     while let Some(event) = rx.recv().await {
         let mut buscar: Option<(Track, u64)> = None;
+        let mut visibilidade: Option<bool> = None;
 
         {
             let state = app.state::<AppState>();
@@ -188,9 +252,13 @@ async fn consume(app: AppHandle, mut rx: mpsc::Receiver<MediaEvent>) {
                     let generation = state.generation.fetch_add(1, Ordering::SeqCst) + 1;
                     buscar = Some((track.clone(), generation));
                 }
-                MediaEvent::PlaybackChanged { state } => {
-                    np.state = *state;
-                    np.clock.set_playing(state.is_playing());
+                MediaEvent::PlaybackChanged { state: playback } => {
+                    np.state = *playback;
+                    np.clock.set_playing(playback.is_playing());
+
+                    if state.settings.lock().unwrap().hide_when_paused {
+                        visibilidade = Some(playback.is_playing());
+                    }
                 }
                 MediaEvent::PositionAnchored { position_ms, .. }
                 | MediaEvent::Seeked { position_ms } => {
@@ -205,6 +273,12 @@ async fn consume(app: AppHandle, mut rx: mpsc::Receiver<MediaEvent>) {
 
         let _ = app.emit("media", &event);
 
+        match visibilidade {
+            Some(true) => overlay::show(&app, geometry(&app)),
+            Some(false) => overlay::hide(&app),
+            None => {}
+        }
+
         if let Some((track, generation)) = buscar {
             tauri::async_runtime::spawn(resolve_lyrics(app.clone(), track, generation));
         }
@@ -218,11 +292,13 @@ async fn consume(app: AppHandle, mut rx: mpsc::Receiver<MediaEvent>) {
 /// `lyricslens toggle`. O plugin de instância única entrega esses argumentos
 /// para o processo que já está rodando em vez de abrir um segundo.
 fn handle_cli(app: &AppHandle, argv: &[String]) {
+    let geo = geometry(app);
     match argv.iter().skip(1).find(|a| !a.starts_with('-')).map(String::as_str) {
-        Some("toggle") => overlay::toggle(app),
+        Some("toggle") => overlay::toggle(app, geo),
         Some("hide") => overlay::hide(app),
+        Some("settings") => overlay::open_settings(app),
         // Sem comando reconhecido, a intenção de reabrir o app é aparecer.
-        _ => overlay::show(app),
+        _ => overlay::show(app, geo),
     }
 }
 
@@ -237,13 +313,16 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             now_playing,
             current_lyrics,
-            set_sync_offset,
+            get_settings,
+            save_settings,
+            open_settings,
+            toggle_overlay,
+            apply_compositor_rules,
             search_lyrics,
             pin_lyrics,
             overlay::probe_environment,
             overlay::set_click_through,
-            overlay::apply_compositor_rules,
-            overlay::toggle_overlay,
+            overlay::list_fonts,
         ])
         .on_window_event(|window, event| {
             // Fechar esconde. O app vive na bandeja; sair é decisão explícita.
@@ -253,12 +332,20 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            let db = app.path().app_data_dir()?.join("lyrics.db");
+            let dir = app.path().app_data_dir()?;
+            let settings_store = SettingsStore::new(&dir);
+            let settings = settings_store.load();
+
+            let mut now_playing = NowPlaying::default();
+            now_playing.clock.set_offset_ms(settings.sync_offset_ms);
+
             app.manage(AppState {
-                now_playing: Mutex::new(NowPlaying::default()),
+                now_playing: Mutex::new(now_playing),
                 last_lyrics: Mutex::new(None),
-                cache: Cache::open(&db)?,
+                cache: Cache::open(&dir.join("lyrics.db"))?,
                 provider: LrcLib::new()?,
+                settings: Mutex::new(settings.clone()),
+                settings_store,
                 generation: AtomicU64::new(0),
             });
 
@@ -267,11 +354,16 @@ pub fn run() {
             // O Wayland ignora tamanho e posição pedidos pela janela; quem
             // decide é o compositor. Ver `overlay::apply_compositor_rules`.
             if let Some(window) = app.get_webview_window(overlay::OVERLAY_LABEL) {
+                let _ = window.set_ignore_cursor_events(settings.click_through);
+
                 let iniciar_oculto = std::env::args().any(|a| a == "hide");
                 if iniciar_oculto {
                     let _ = window.hide();
                 } else {
-                    tauri::async_runtime::spawn(overlay::apply_rules_when_mapped(window));
+                    tauri::async_runtime::spawn(overlay::apply_rules_when_mapped(
+                        window,
+                        Geometry::from(&settings),
+                    ));
                 }
             }
 

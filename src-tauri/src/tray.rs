@@ -17,10 +17,11 @@ use crate::overlay;
 pub fn setup(app: &App) -> tauri::Result<()> {
     let mostrar = MenuItem::with_id(app, "toggle", "Mostrar / ocultar", true, None::<&str>)?;
     let recolocar = MenuItem::with_id(app, "recolocar", "Recolocar overlay", true, None::<&str>)?;
+    let config = MenuItem::with_id(app, "config", "Configurações…", true, None::<&str>)?;
     let separador = PredefinedMenuItem::separator(app)?;
     let sair = MenuItem::with_id(app, "sair", "Sair", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&mostrar, &recolocar, &separador, &sair])?;
+    let menu = Menu::with_items(app, &[&mostrar, &recolocar, &config, &separador, &sair])?;
 
     TrayIconBuilder::with_id("principal")
         .icon(app.default_window_icon().unwrap().clone())
@@ -29,8 +30,9 @@ pub fn setup(app: &App) -> tauri::Result<()> {
         // O menu é do botão direito; o esquerdo alterna direto.
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "toggle" => overlay::toggle(app),
-            "recolocar" => overlay::show(app),
+            "toggle" => overlay::toggle(app, crate::geometry(app)),
+            "recolocar" => overlay::show(app, crate::geometry(app)),
+            "config" => overlay::open_settings(app),
             "sair" => app.exit(0),
             _ => {}
         })
@@ -41,7 +43,8 @@ pub fn setup(app: &App) -> tauri::Result<()> {
                 ..
             } = event
             {
-                overlay::toggle(tray.app_handle());
+                let app = tray.app_handle();
+                overlay::toggle(app, crate::geometry(app));
             }
         })
         .build(app)?;

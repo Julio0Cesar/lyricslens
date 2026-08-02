@@ -11,11 +11,25 @@ use serde::Serialize;
 use tauri::{Manager, WebviewWindow};
 
 pub const OVERLAY_LABEL: &str = "overlay";
+pub const SETTINGS_LABEL: &str = "settings";
 
-/// Tamanho e folga do rodapé usados ao recolocar o overlay.
-const LARGURA: i32 = 780;
-const ALTURA: i32 = 300;
-const MARGEM_INFERIOR: i32 = 80;
+/// Tamanho e folga do rodapé, vindos das preferências do usuário.
+#[derive(Clone, Copy, Debug)]
+pub struct Geometry {
+    pub width: i32,
+    pub height: i32,
+    pub margin_bottom: i32,
+}
+
+impl From<&crate::store::Settings> for Geometry {
+    fn from(s: &crate::store::Settings) -> Self {
+        Self {
+            width: s.width as i32,
+            height: s.height as i32,
+            margin_bottom: s.margin_bottom as i32,
+        }
+    }
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -62,27 +76,29 @@ fn hyprctl(args: &[&str]) -> Result<String, String> {
 /// Pede ao compositor o que o Wayland não deixa a janela pedir por conta
 /// própria: flutuar, ficar fixa em todas as áreas de trabalho, e assumir
 /// tamanho e posição escolhidos.
-#[tauri::command]
-pub fn apply_compositor_rules(window: WebviewWindow) -> Result<String, String> {
+///
+/// O seletor tem que ser específico: sem `title:`, a regra pegaria também a
+/// janela de configurações, que é do mesmo processo e da mesma classe.
+pub fn apply_rules(window: &WebviewWindow, geo: Geometry) -> Result<String, String> {
     if !is_hyprland() {
         return Ok("compositor sem regras conhecidas — janela fica como o sistema decidir".into());
     }
 
-    let seletor = "class:^(lyricslens)$";
+    let seletor = "title:^(LyricsLens Overlay)$";
     hyprctl(&["dispatch", "setfloating", seletor])?;
     hyprctl(&["dispatch", "pin", seletor])?;
     hyprctl(&[
         "dispatch",
         "resizewindowpixel",
-        &format!("exact {LARGURA} {ALTURA},{seletor}"),
+        &format!("exact {} {},{seletor}", geo.width, geo.height),
     ])?;
 
     // Canto inferior central do monitor onde a janela está.
     if let Ok(Some(monitor)) = window.current_monitor() {
         let pos = monitor.position();
         let size = monitor.size();
-        let x = pos.x + (size.width as i32 - LARGURA) / 2;
-        let y = pos.y + size.height as i32 - ALTURA - MARGEM_INFERIOR;
+        let x = pos.x + (size.width as i32 - geo.width) / 2;
+        let y = pos.y + size.height as i32 - geo.height - geo.margin_bottom;
         hyprctl(&[
             "dispatch",
             "movewindowpixel",
@@ -95,14 +111,14 @@ pub fn apply_compositor_rules(window: WebviewWindow) -> Result<String, String> {
 
 /// As regras só pegam depois que o compositor conhece a janela. Em vez de um
 /// `sleep` no escuro, espera ela aparecer na lista de clientes.
-pub async fn apply_rules_when_mapped(window: WebviewWindow) {
+pub async fn apply_rules_when_mapped(window: WebviewWindow, geo: Geometry) {
     if !is_hyprland() {
         return;
     }
 
     for _ in 0..25 {
-        if hyprctl(&["clients"]).is_ok_and(|s| s.contains("class: lyricslens")) {
-            if let Err(e) = apply_compositor_rules(window) {
+        if hyprctl(&["clients"]).is_ok_and(|s| s.contains("LyricsLens Overlay")) {
+            if let Err(e) = apply_rules(&window, geo) {
                 eprintln!("[overlay] regras do compositor falharam: {e}");
             }
             return;
@@ -112,17 +128,48 @@ pub async fn apply_rules_when_mapped(window: WebviewWindow) {
     eprintln!("[overlay] a janela não apareceu no compositor a tempo");
 }
 
+/// Fontes instaladas no sistema, para o seletor de fonte.
+#[tauri::command]
+pub fn list_fonts() -> Vec<String> {
+    let Ok(out) = std::process::Command::new("fc-list")
+        .args(["--format", "%{family[0]}\n"])
+        .output()
+    else {
+        return Vec::new();
+    };
+
+    let mut nomes: Vec<String> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect();
+
+    nomes.sort_unstable();
+    nomes.dedup();
+    nomes
+}
+
 /// Mostra o overlay e o recoloca — ao reaparecer, o compositor pode tê-lo
 /// devolvido para o layout em mosaico.
-pub fn show(app: &tauri::AppHandle) {
+pub fn show(app: &tauri::AppHandle, geo: Geometry) {
     let Some(window) = app.get_webview_window(OVERLAY_LABEL) else {
         return;
     };
     let _ = window.show();
     let _ = window.set_focus();
 
-    let w = window.clone();
-    tauri::async_runtime::spawn(apply_rules_when_mapped(w));
+    tauri::async_runtime::spawn(apply_rules_when_mapped(window, geo));
+}
+
+/// Abre a janela de configurações, criando-a se ainda não existir.
+pub fn open_settings(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window(SETTINGS_LABEL) {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+    eprintln!("[overlay] janela de configurações não encontrada");
 }
 
 pub fn hide(app: &tauri::AppHandle) {
@@ -132,18 +179,13 @@ pub fn hide(app: &tauri::AppHandle) {
 }
 
 /// O que o ícone da bandeja e o atalho global chamam.
-pub fn toggle(app: &tauri::AppHandle) {
+pub fn toggle(app: &tauri::AppHandle, geo: Geometry) {
     let Some(window) = app.get_webview_window(OVERLAY_LABEL) else {
         return;
     };
     if window.is_visible().unwrap_or(false) {
         hide(app);
     } else {
-        show(app);
+        show(app, geo);
     }
-}
-
-#[tauri::command]
-pub fn toggle_overlay(app: tauri::AppHandle) {
-    toggle(&app);
 }

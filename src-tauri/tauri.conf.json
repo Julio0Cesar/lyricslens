@@ -22,6 +22,16 @@
         "skipTaskbar": true,
         "shadow": false,
         "resizable": true
+      },
+      {
+        "label": "settings",
+        "title": "LyricsLens — Configurações",
+        "width": 560,
+        "height": 720,
+        "minWidth": 420,
+        "minHeight": 480,
+        "visible": false,
+        "resizable": true
       }
     ],
     "security": {

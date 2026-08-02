@@ -83,6 +83,7 @@ onde o sistema mandar; use "recolocar" depois de mover.
 | Overlay always-on-top | **pronto** (Hyprland; fullscreen pendente) |
 | Tray + atalho global | **pronto** |
 | Cache local (SQLite) | **pronto** |
+| Janela de configurações | **pronto** |
 | Modo offline | parcial — cache pronto, UI pendente |
 | Tradução | adiado — ver issues |
 
