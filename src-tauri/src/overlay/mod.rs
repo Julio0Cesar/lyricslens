@@ -108,16 +108,25 @@ pub fn apply_rules(window: &WebviewWindow, geo: Geometry) -> Result<String, Stri
     ])?;
 
     // Posição escolhida pelo usuário; sem ela, rodapé central do monitor.
+    //
+    // A geometria do monitor vem do compositor, não do Tauri: a janela nasce
+    // oculta para o layer-shell poder ser inicializado antes de ela existir, e
+    // nesse ponto o `current_monitor()` ainda responde vazio. Quem sempre sabe
+    // é o compositor.
     let destino = match geo.position {
         Some(xy) => Some(xy),
-        None => window.current_monitor().ok().flatten().map(|monitor| {
-            let pos = monitor.position();
-            let size = monitor.size();
-            (
-                pos.x + (size.width as i32 - geo.width) / 2,
-                pos.y + size.height as i32 - geo.height - geo.margin_bottom,
-            )
-        }),
+        None => monitor_do_overlay()
+            .or_else(|| {
+                let m = window.current_monitor().ok().flatten()?;
+                let (p, s) = (m.position(), m.size());
+                Some((p.x, p.y, s.width as i32, s.height as i32))
+            })
+            .map(|(mx, my, mw, mh)| {
+                (
+                    mx + (mw - geo.width) / 2,
+                    my + mh - geo.height - geo.margin_bottom,
+                )
+            }),
     };
 
     if let Some((x, y)) = destino {
@@ -131,6 +140,39 @@ pub fn apply_rules(window: &WebviewWindow, geo: Geometry) -> Result<String, Stri
     Ok("regras aplicadas".into())
 }
 
+/// Nossa janela na lista de clientes do compositor.
+fn cliente_overlay() -> Option<serde_json::Value> {
+    let json = hyprctl(&["-j", "clients"]).ok()?;
+    let clients: serde_json::Value = serde_json::from_str(&json).ok()?;
+    clients
+        .as_array()?
+        .iter()
+        .find(|c| c.get("title").and_then(|t| t.as_str()) == Some("LyricsLens Overlay"))
+        .cloned()
+}
+
+/// Geometria `(x, y, largura, altura)` do monitor onde o overlay está.
+fn monitor_do_overlay() -> Option<(i32, i32, i32, i32)> {
+    if !is_hyprland() {
+        return None;
+    }
+    let id = cliente_overlay()?.get("monitor")?.as_i64()?;
+
+    let json = hyprctl(&["-j", "monitors"]).ok()?;
+    let monitors: serde_json::Value = serde_json::from_str(&json).ok()?;
+    let m = monitors
+        .as_array()?
+        .iter()
+        .find(|m| m.get("id").and_then(|i| i.as_i64()) == Some(id))?;
+
+    Some((
+        m.get("x")?.as_i64()? as i32,
+        m.get("y")?.as_i64()? as i32,
+        m.get("width")?.as_i64()? as i32,
+        m.get("height")?.as_i64()? as i32,
+    ))
+}
+
 /// Onde a janela está agora, segundo o compositor.
 ///
 /// Em Wayland o cliente não sabe a própria posição — o protocolo não conta.
@@ -139,15 +181,9 @@ pub fn current_position() -> Option<(i32, i32)> {
     if !is_hyprland() {
         return None;
     }
-    let json = hyprctl(&["-j", "clients"]).ok()?;
-    let clients: serde_json::Value = serde_json::from_str(&json).ok()?;
-
-    clients.as_array()?.iter().find_map(|c| {
-        (c.get("title")?.as_str()? == "LyricsLens Overlay").then(|| {
-            let at = c.get("at")?.as_array()?;
-            Some((at.first()?.as_i64()? as i32, at.get(1)?.as_i64()? as i32))
-        })?
-    })
+    let at = cliente_overlay()?;
+    let at = at.get("at")?.as_array()?;
+    Some((at.first()?.as_i64()? as i32, at.get(1)?.as_i64()? as i32))
 }
 
 /// As regras só pegam depois que o compositor conhece a janela. Em vez de um
