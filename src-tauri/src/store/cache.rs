@@ -191,7 +191,10 @@ impl Cache {
         )?;
 
         // Achou agora: um fracasso anterior não vale mais.
-        conn.execute("DELETE FROM misses WHERE track_key = ?1", params![track.key()])?;
+        conn.execute(
+            "DELETE FROM misses WHERE track_key = ?1",
+            params![track.key()],
+        )?;
         Ok(())
     }
 
@@ -249,7 +252,6 @@ impl Cache {
         )?;
         Ok(())
     }
-
 }
 
 #[cfg(test)]
@@ -326,12 +328,17 @@ mod tests {
         assert!(c.should_retry(&t.key()).unwrap(), "sem registro, tenta");
 
         c.mark_miss(&t.key()).unwrap();
-        assert!(!c.should_retry(&t.key()).unwrap(), "recém-falhou, não insiste");
+        assert!(
+            !c.should_retry(&t.key()).unwrap(),
+            "recém-falhou, não insiste"
+        );
 
         c.put(&t, &letra()).unwrap();
-        assert!(c.should_retry(&t.key()).unwrap(), "achou: o fracasso caducou");
+        assert!(
+            c.should_retry(&t.key()).unwrap(),
+            "achou: o fracasso caducou"
+        );
     }
-
 
     #[test]
     fn estatisticas_contam_o_que_importa() {

@@ -23,8 +23,13 @@ pub fn setup(app: &App) -> tauri::Result<()> {
 
     let menu = Menu::with_items(app, &[&mostrar, &recolocar, &config, &separador, &sair])?;
 
+    // Ícone próprio da bandeja: só o glifo, sem fundo. O ícone do app tem um
+    // quadrado escuro que fica deslocado num painel.
+    let icone = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
+
     TrayIconBuilder::with_id("principal")
-        .icon(app.default_window_icon().unwrap().clone())
+        .icon(icone)
+        .icon_as_template(true)
         .tooltip("LyricsLens")
         .menu(&menu)
         // O menu é do botão direito; o esquerdo alterna direto.

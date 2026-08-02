@@ -181,10 +181,12 @@ mod tests {
         let d = dir_temporario("ida-e-volta");
         let store = SettingsStore::new(&d);
 
-        let mut s = Settings::default();
-        s.font_size = 40;
-        s.background_opacity = 0.2;
-        s.text_align = TextAlign::Center;
+        let s = Settings {
+            font_size: 40,
+            background_opacity: 0.2,
+            text_align: TextAlign::Center,
+            ..Default::default()
+        };
         store.save(&s).unwrap();
 
         let lida = store.load();

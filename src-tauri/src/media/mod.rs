@@ -77,7 +77,11 @@ pub enum AnchorConfidence {
 #[derive(Clone, Debug, Serialize)]
 // `rename_all` sozinho só renomeia as variantes; os campos dentro delas
 // precisam de `rename_all_fields`, senão chegam em snake_case na UI.
-#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum MediaEvent {
     TrackChanged {
         track: Track,

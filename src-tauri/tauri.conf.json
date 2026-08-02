@@ -42,13 +42,28 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["deb", "rpm", "appimage"],
+    "category": "Music",
+    "shortDescription": "Overlay de letras sincronizadas",
+    "longDescription": "Detecta a música tocando no sistema, busca a letra sincronizada e a mostra numa janela flutuante sobre qualquer aplicativo.",
+    "homepage": "https://github.com/Julio0Cesar/lyricslens",
+    "publisher": "Julio0Cesar",
+    "licenseFile": "../LICENSE",
     "icon": [
       "icons/32x32.png",
+      "icons/64x64.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0", "libayatana-appindicator3-1"]
+      },
+      "rpm": {
+        "depends": ["webkit2gtk4.1", "gtk3", "libayatana-appindicator-gtk3"]
+      }
+    }
   }
 }

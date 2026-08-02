@@ -168,6 +168,4 @@ mod tests {
         let p = parse("isso não é LRC\n\n[00:10.00]isso é");
         assert_eq!(p.lines.len(), 1);
     }
-
-
 }

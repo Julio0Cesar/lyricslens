@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # Lê os commits desde a última versão, decide o próximo X.Y.Z pelo tipo de
+  # cada um (feat → minor, fix → patch, ! → major) e mantém um PR de release
+  # aberto com o CHANGELOG. Nada é publicado até esse PR ser aprovado.
+  versao:
+    name: Versionamento
+    runs-on: ubuntu-22.04
+    outputs:
+      publicar: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  pacotes:
+    name: Pacotes Linux
+    needs: versao
+    if: needs.versao.outputs.publicar == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependências de sistema
+        uses: ./.github/actions/linux-deps
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build
+        # O `linuxdeploy`, usado para montar o AppImage, é ele próprio um
+        # AppImage — e montá-lo exige libfuse2, que nem o runner nem as
+        # distribuições recentes trazem. Extrair em vez de montar dispensa isso.
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: pnpm tauri build
+
+      - name: Reunir os artefatos
+        run: |
+          mkdir -p dist-release
+          bundle=src-tauri/target/release/bundle
+          cp "$bundle"/appimage/*.AppImage dist-release/lyricslens-x86_64.AppImage
+          cp "$bundle"/deb/*.deb          dist-release/lyricslens-x86_64.deb
+          cp "$bundle"/rpm/*.rpm          dist-release/lyricslens-x86_64.rpm
+          # O instalador precisa do ícone para registrar o app no menu.
+          cp src-tauri/icons/128x128.png  dist-release/lyricslens.png
+          ls -la dist-release
+
+      - name: Publicar na release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ needs.versao.outputs.tag }}" dist-release/* --clobber

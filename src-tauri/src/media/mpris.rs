@@ -13,9 +13,7 @@ use tokio::sync::mpsc;
 use zbus::zvariant::{OwnedValue, Value};
 use zbus::{fdo, Connection};
 
-use super::{
-    AnchorConfidence, MediaError, MediaEvent, MediaProvider, PlaybackState, Track,
-};
+use super::{AnchorConfidence, MediaError, MediaEvent, MediaProvider, PlaybackState, Track};
 use crate::sync::Clock;
 
 const MPRIS_PREFIX: &str = "org.mpris.MediaPlayer2.";
@@ -26,14 +24,6 @@ const AGGREGATOR: &str = "org.mpris.MediaPlayer2.playerctld";
 const POLL: Duration = Duration::from_millis(100);
 /// A cada quantos ticks reavaliamos quem é o player ativo.
 const RESCAN_EVERY: u64 = 20;
-/// A cada quantos ticks relemos metadados e estado de reprodução.
-///
-/// Todo tick, e isso é barato: o `zbus` mantém as propriedades num cache
-/// alimentado pelo próprio `PropertiesChanged`, então reler não é ida ao
-/// barramento. O ganho é direto na experiência — a troca de faixa passa a ser
-/// notada em até 100ms em vez de até 500ms, que era metade do intervalo até a
-/// letra nova aparecer.
-const METADATA_EVERY: u64 = 1;
 /// Intervalo mínimo entre âncoras enviadas, fora saltos.
 const ANCHOR_THROTTLE: Duration = Duration::from_millis(500);
 
@@ -56,8 +46,8 @@ trait Player {
 
 pub struct MprisProvider;
 
-impl Default for MprisProvider {
-    fn default() -> Self {
+impl MprisProvider {
+    pub fn new() -> Self {
         Self
     }
 }
@@ -125,7 +115,11 @@ impl MediaProvider for MprisProvider {
 
             let Some(a) = active.as_mut() else { continue };
 
-            if ticks % METADATA_EVERY == 0 && !refresh_metadata(a, &tx).await {
+            // Metadados a cada tick, e isso é barato: o `zbus` mantém as
+            // propriedades num cache alimentado pelo próprio
+            // `PropertiesChanged`, então reler não é ida ao barramento. O ganho
+            // é direto na experiência — a troca de faixa é notada em até 100ms.
+            if !refresh_metadata(a, &tx).await {
                 // O player sumiu no meio do caminho; o próximo rescan resolve.
                 active = None;
                 continue;
@@ -155,7 +149,11 @@ async fn refresh_metadata(a: &mut Active<'_>, tx: &mpsc::Sender<MediaEvent>) -> 
     if state != a.state {
         a.state = state;
         a.clock.set_playing(state.is_playing());
-        if tx.send(MediaEvent::PlaybackChanged { state }).await.is_err() {
+        if tx
+            .send(MediaEvent::PlaybackChanged { state })
+            .await
+            .is_err()
+        {
             return false;
         }
     }
@@ -295,12 +293,18 @@ fn source_name(bus_name: &str) -> String {
 
 fn parse_track(metadata: &HashMap<String, OwnedValue>, source: &str) -> Track {
     Track {
-        title: metadata.get("xesam:title").and_then(as_text).unwrap_or_default(),
+        title: metadata
+            .get("xesam:title")
+            .and_then(as_text)
+            .unwrap_or_default(),
         artist: metadata
             .get("xesam:artist")
             .and_then(as_text_list)
             .unwrap_or_default(),
-        album: metadata.get("xesam:album").and_then(as_text).unwrap_or_default(),
+        album: metadata
+            .get("xesam:album")
+            .and_then(as_text)
+            .unwrap_or_default(),
         duration_ms: metadata.get("mpris:length").and_then(as_micros_to_ms),
         art_url: metadata
             .get("mpris:artUrl")
@@ -351,7 +355,7 @@ fn as_micros_to_ms(v: &OwnedValue) -> Option<u64> {
         Value::F64(n) => *n as i64,
         _ => return None,
     };
-    (micros > 0).then(|| (micros / 1_000) as u64)
+    (micros > 0).then_some((micros / 1_000) as u64)
 }
 
 #[cfg(test)]
@@ -360,7 +364,10 @@ mod tests {
 
     #[test]
     fn extrai_o_nome_da_fonte_do_bus() {
-        assert_eq!(source_name("org.mpris.MediaPlayer2.firefox.instance_1_32"), "firefox");
+        assert_eq!(
+            source_name("org.mpris.MediaPlayer2.firefox.instance_1_32"),
+            "firefox"
+        );
         assert_eq!(source_name("org.mpris.MediaPlayer2.spotify"), "spotify");
         assert_eq!(source_name("org.mpris.MediaPlayer2.vlc.instance7"), "vlc");
     }

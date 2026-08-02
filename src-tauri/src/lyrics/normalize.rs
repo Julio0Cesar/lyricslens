@@ -48,7 +48,9 @@ fn é_ruído(texto: &str) -> bool {
     if t.is_empty() {
         return true;
     }
-    RUIDO.iter().any(|r| t == *r || t.starts_with(&format!("{r} ")) || t.contains(r))
+    RUIDO
+        .iter()
+        .any(|r| t == *r || t.starts_with(&format!("{r} ")) || t.contains(r))
 }
 
 /// Remove blocos entre `()` ou `[]` cujo conteúdo é ruído conhecido.
@@ -125,7 +127,10 @@ pub fn preparar(artist: &str, title: &str) -> Consulta {
 
     if let Some((a, t)) = separar_hifen(&titulo_limpo) {
         if artista_limpo.is_empty() || parece_canal(artist) {
-            return Consulta { artist: a, title: t };
+            return Consulta {
+                artist: a,
+                title: t,
+            };
         }
     }
 

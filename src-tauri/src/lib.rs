@@ -46,7 +46,13 @@ fn geometry(app: &AppHandle) -> Geometry {
 
 /// Devolve ao compositor a combinação que o app tinha tomado.
 fn clear_hotkey(app: &AppHandle) {
-    let atalho = app.state::<AppState>().settings.lock().unwrap().hotkey.clone();
+    let atalho = app
+        .state::<AppState>()
+        .settings
+        .lock()
+        .unwrap()
+        .hotkey
+        .clone();
     overlay::hotkey::clear(&atalho);
 }
 
@@ -59,7 +65,11 @@ struct Snapshot {
 }
 
 #[derive(Clone, Serialize)]
-#[serde(tag = "status", rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "status",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 enum LyricsEvent {
     Searching { track_key: String },
     Found { track_key: String, lyrics: Lyrics },
@@ -153,9 +163,7 @@ fn cache_stats(state: tauri::State<'_, AppState>) -> Result<store::cache::CacheS
 /// depois de esconder e mostrar de novo.
 #[tauri::command]
 fn remember_overlay_position(app: AppHandle) -> Option<(i32, i32)> {
-    let Some((x, y)) = overlay::current_position() else {
-        return None;
-    };
+    let (x, y) = overlay::current_position()?;
 
     let state = app.state::<AppState>();
     let mut settings = state.settings.lock().unwrap();
@@ -222,7 +230,11 @@ async fn search_lyrics(
 
 /// Deixa a letra disponível offline.
 #[tauri::command]
-fn pin_lyrics(state: tauri::State<'_, AppState>, track_key: String, pinned: bool) -> Result<(), String> {
+fn pin_lyrics(
+    state: tauri::State<'_, AppState>,
+    track_key: String,
+    pinned: bool,
+) -> Result<(), String> {
     state
         .cache
         .set_pinned(&track_key, pinned)
@@ -398,7 +410,12 @@ async fn consume(app: AppHandle, mut rx: mpsc::Receiver<MediaEvent>) {
 /// para o processo que já está rodando em vez de abrir um segundo.
 fn handle_cli(app: &AppHandle, argv: &[String]) {
     let geo = geometry(app);
-    match argv.iter().skip(1).find(|a| !a.starts_with('-')).map(String::as_str) {
+    match argv
+        .iter()
+        .skip(1)
+        .find(|a| !a.starts_with('-'))
+        .map(String::as_str)
+    {
         Some("toggle") => overlay::toggle(app, geo),
         Some("hide") => overlay::hide(app),
         Some("settings") => overlay::open_settings(app),
@@ -497,7 +514,7 @@ pub fn run() {
 
             tauri::async_runtime::spawn(consume(handle, rx));
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = PlatformProvider::default().run(tx).await {
+                if let Err(e) = PlatformProvider::new().run(tx).await {
                     eprintln!("[media] provider parou: {e}");
                 }
             });

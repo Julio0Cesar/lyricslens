@@ -11,8 +11,11 @@ use crate::media::Track;
 
 const BASE: &str = "https://lrclib.net/api";
 /// O LRCLIB pede identificação honesta do cliente.
-const USER_AGENT: &str =
-    concat!("LyricsLens/", env!("CARGO_PKG_VERSION"), " (https://github.com/Julio0Cesar/lyricslens)");
+const USER_AGENT: &str = concat!(
+    "LyricsLens/",
+    env!("CARGO_PKG_VERSION"),
+    " (https://github.com/Julio0Cesar/lyricslens)"
+);
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -113,7 +116,7 @@ const TOLERANCIA_S: f64 = 12.0;
 ///
 /// Letra sincronizada ganha de letra corrida sempre; entre as sincronizadas,
 /// vence a duração mais próxima.
-fn escolher<'a>(candidatos: &'a [Candidate], duration_ms: Option<u64>) -> Option<&'a Candidate> {
+fn escolher(candidatos: &[Candidate], duration_ms: Option<u64>) -> Option<&Candidate> {
     let alvo_s = duration_ms.map(|ms| ms as f64 / 1000.0);
 
     let dentro_da_tolerância = |c: &Candidate| match (alvo_s, c.duration_s) {
@@ -214,8 +217,12 @@ mod tests {
 
     #[test]
     fn letra_sincronizada_vira_linhas() {
-        let l = faixa(Some("[00:04.04] eis o melhor\n[00:10.55] no meu termômetro"), None, false)
-            .into_lyrics();
+        let l = faixa(
+            Some("[00:04.04] eis o melhor\n[00:10.55] no meu termômetro"),
+            None,
+            false,
+        )
+        .into_lyrics();
         assert!(!l.lines.is_empty());
         assert_eq!(l.lines.len(), 2);
         assert_eq!(l.lines[0].at_ms, 4_040);
