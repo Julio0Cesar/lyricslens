@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/Julio0Cesar/lyricslens/compare/lyricslens-v0.2.0...lyricslens-v0.2.1) (2026-08-03)
+
+
+### Correções
+
+* atalho global apontava para o binário interno do AppImage ([d0ddd4a](https://github.com/Julio0Cesar/lyricslens/commit/d0ddd4ab1f65f5232e7312789342f37beec1b205))
+
 ## [0.2.0](https://github.com/Julio0Cesar/lyricslens/compare/lyricslens-v0.1.0...lyricslens-v0.2.0) (2026-08-03)
 
 
