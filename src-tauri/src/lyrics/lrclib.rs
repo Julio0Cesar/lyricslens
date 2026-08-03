@@ -75,7 +75,11 @@ impl LrcLib {
     pub fn new() -> Result<Self, LyricsError> {
         let http = reqwest::Client::builder()
             .user_agent(USER_AGENT)
-            .timeout(std::time::Duration::from_secs(10))
+            // O LRCLIB responde em ~400ms no caso comum, mas leva bem mais
+            // em consultas estranhas — medido: 17s para um título com
+            // pontuação incomum e álbum vazio. Um limite curto transformava
+            // isso em "falha de rede" e a letra nunca aparecia.
+            .timeout(std::time::Duration::from_secs(25))
             .build()
             .map_err(|e| LyricsError::Network(e.to_string()))?;
         Ok(Self { http })

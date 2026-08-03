@@ -118,7 +118,7 @@ Icon=$NOME
 Terminal=false
 Categories=AudioVideo;Audio;Music;
 Keywords=letra;lyrics;musica;music;karaoke;overlay;
-StartupWMClass=lyricslens
+StartupWMClass=Lyricslens
 EOF
 
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$ATALHOS" 2>/dev/null || true
