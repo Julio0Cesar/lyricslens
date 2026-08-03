@@ -35,6 +35,18 @@ export type Settings = {
 };
 
 /**
+ * O modo camada é a única preferência que pode não estar valendo: ele depende
+ * do ambiente gráfico e é decidido na partida do app. Sem isto o toggle mostra
+ * o que o usuário pediu, que pode não ser o que está acontecendo.
+ */
+export type OverlayStatus = {
+  layerShellRequested: boolean;
+  layerShellActive: boolean;
+  /** Por que os dois diferem. `null` quando não diferem. */
+  layerShellFallback: string | null;
+};
+
+/**
  * As preferências vivem no backend; toda janela é espectadora do mesmo estado.
  * Quem edita escreve, e o evento devolve o resultado já saneado para todas —
  * inclusive para quem editou, então a UI nunca mostra um valor que o backend
@@ -42,11 +54,15 @@ export type Settings = {
  */
 export function useSettings() {
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [status, setStatus] = useState<OverlayStatus | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const pendente = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     invoke<Settings>("get_settings").then(setSettings);
+    // Não muda em tempo de execução — o tipo da superfície é definido antes de
+    // a janela existir —, então basta ler uma vez.
+    invoke<OverlayStatus>("overlay_status").then(setStatus);
 
     const un = listen<Settings>("settings", ({ payload }) => setSettings(payload));
     return () => {
@@ -80,5 +96,5 @@ export function useSettings() {
     });
   }, []);
 
-  return { settings, erro, update };
+  return { settings, status, erro, update };
 }

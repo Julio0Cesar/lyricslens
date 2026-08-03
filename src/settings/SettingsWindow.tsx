@@ -19,7 +19,7 @@ function emCimaDeControle(alvo: EventTarget | null): boolean {
 }
 
 export default function SettingsWindow() {
-  const { settings, erro, update } = useSettings();
+  const { settings, status, erro, update } = useSettings();
   const [fontes, setFontes] = useState<string[]>([]);
   const [cache, setCache] = useState<CacheStats | null>(null);
   const [versao, setVersao] = useState<UpdateInfo | null>(null);
@@ -231,7 +231,13 @@ export default function SettingsWindow() {
           </Row>
           <Row
             label="Camada do compositor"
-            hint="fica acima até de tela cheia, mas deixa de ser arrastável · exige reiniciar o app"
+            hint={
+              // Quando a camada não sobe, a opção aparecia ligada enquanto na
+              // prática não estava em uso, e nada indicava o porquê.
+              settings.layerShell && status && !status.layerShellActive
+                ? `ligada, mas sem efeito nesta sessão — ${status.layerShellFallback ?? "indisponível"}`
+                : "fica acima até de tela cheia, mas deixa de ser arrastável · exige reiniciar o app"
+            }
           >
             <Toggle value={settings.layerShell} onChange={(v) => update({ layerShell: v })} />
           </Row>

@@ -198,7 +198,7 @@ pnpm tauri dev
 ```
 
 ```bash
-cd src-tauri && cargo test    # 48 testes
+cd src-tauri && cargo test    # 59 testes
 pnpm exec tsc --noEmit
 ```
 

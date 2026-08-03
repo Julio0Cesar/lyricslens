@@ -9,16 +9,52 @@
 //! realizada**. Depois disso o tipo da superfície já está definido no
 //! protocolo e não há como trocar — por isso a opção só vale ao iniciar o app.
 
+use gtk::glib::prelude::ObjectExt;
 use gtk::prelude::WidgetExt;
 use gtk_layer_shell::{Edge, KeyboardMode, Layer, LayerShell};
 use tauri::WebviewWindow;
 
 use super::Geometry;
 
+/// O backend que o GTK realmente abriu, pelo tipo concreto do `GdkDisplay`.
+///
+/// Não dá para deduzir isso das variáveis de ambiente: sob XWayland a sessão é
+/// Wayland, `WAYLAND_DISPLAY` está definido, e ainda assim o cliente fala X11.
+/// Quem sabe a verdade é o display que o GTK abriu.
+fn backend(window: &WebviewWindow) -> Option<String> {
+    let gtk_window = window.gtk_window().ok()?;
+    Some(gtk_window.display().type_().name().to_string())
+}
+
+/// Por que a camada não está disponível.
+///
+/// `gtk_layer_is_supported()` só sabe dizer "não". Dizer *por quê* importa: a
+/// causa mais comum não é o compositor, e culpá-lo manda o usuário atrás da
+/// coisa errada — possivelmente abrir issue no projeto do compositor em vez de
+/// aqui. Ver #38.
+fn motivo_indisponivel(window: &WebviewWindow) -> String {
+    match backend(window).as_deref() {
+        Some("GdkX11Display") if std::env::var_os("WAYLAND_DISPLAY").is_some() => {
+            "o app está rodando sob XWayland, e cliente X11 não fala protocolo Wayland — \
+             wlr-layer-shell não existe aí. Não é limitação do seu compositor; \
+             se você instalou pelo AppImage, ver a #31"
+                .into()
+        }
+        Some("GdkX11Display") => {
+            "a sessão é X11 e wlr-layer-shell é um protocolo Wayland — não existe aí".into()
+        }
+        Some("GdkWaylandDisplay") => "o compositor não implementa wlr-layer-shell".into(),
+        Some(outro) => {
+            format!("backend gráfico inesperado ({outro}); wlr-layer-shell indisponível")
+        }
+        None => "não consegui identificar o backend gráfico; wlr-layer-shell indisponível".into(),
+    }
+}
+
 /// Prepara a janela como camada. Tem que ser chamado antes do primeiro `show`.
 pub fn init(window: &WebviewWindow, geo: Geometry) -> Result<(), String> {
     if !gtk_layer_shell::is_supported() {
-        return Err("o compositor não implementa wlr-layer-shell".into());
+        return Err(motivo_indisponivel(window));
     }
 
     let gtk_window = window

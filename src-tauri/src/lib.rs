@@ -6,7 +6,7 @@ mod sync;
 mod tray;
 mod update;
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use lyrics::{lrclib::LrcLib, Candidate, Lyrics, LyricsProvider};
@@ -38,11 +38,29 @@ struct AppState {
     /// Sobe a cada troca de faixa. Uma busca que volta atrasada compara a
     /// geração com a atual e se descarta em vez de escrever letra errada.
     generation: AtomicU64,
+    /// O modo camada está de fato em uso nesta execução?
+    ///
+    /// Separado de `Settings::layer_shell` de propósito. Aquilo é *preferência*
+    /// do usuário e o app nunca a sobrescreve; isto é *estado efetivo*,
+    /// decidido a cada partida. Antes os dois eram a mesma coisa, então uma
+    /// indisponibilidade do ambiente — rodar sob XWayland, por exemplo — era
+    /// gravada no settings.json como se fosse escolha do usuário, e a opção
+    /// ficava desligada para sempre mesmo depois de o ambiente melhorar.
+    /// Ver #37.
+    layer_shell_active: AtomicBool,
+    /// Por que a camada não subiu, quando não subiu. Vai para a interface: a
+    /// opção aparecia ligada nas configurações enquanto na prática não estava
+    /// em uso, sem nenhuma indicação.
+    layer_shell_fallback: Mutex<Option<String>>,
 }
 
-/// Geometria atual do overlay, conforme as preferências.
+/// Geometria atual do overlay: as preferências, com o modo camada trocado pelo
+/// que está de fato valendo nesta execução.
 fn geometry(app: &AppHandle) -> Geometry {
-    Geometry::from(&*app.state::<AppState>().settings.lock().unwrap())
+    let state = app.state::<AppState>();
+    let mut geo = Geometry::from(&*state.settings.lock().unwrap());
+    geo.layer_shell = state.layer_shell_active.load(Ordering::SeqCst);
+    geo
 }
 
 /// Devolve ao compositor a combinação que o app tinha tomado.
@@ -136,13 +154,41 @@ fn save_settings(app: AppHandle, mut settings: Settings) -> Result<Settings, Str
     if let Some(window) = app.get_webview_window(overlay::OVERLAY_LABEL) {
         let _ = window.set_ignore_cursor_events(settings.click_through);
         if geometria_mudou {
-            let _ = overlay::apply_rules(&window, Geometry::from(&settings));
+            // `geometry` e não `Geometry::from`: o modo camada que vale é o
+            // efetivo, não o que o usuário preferiria. Com o `from` direto, uma
+            // preferência que caiu para janela comum mandaria a geometria pelo
+            // caminho da camada e ela não seria aplicada em lugar nenhum.
+            let _ = overlay::apply_rules(&window, geometry(&app));
         }
     }
 
     // A janela de configurações e o overlay reagem juntos.
     let _ = app.emit("settings", &settings);
     Ok(settings)
+}
+
+/// O que a interface precisa saber sobre o modo camada.
+///
+/// Sem isto o toggle das configurações mostra a preferência, que pode não ser o
+/// que está valendo — e o usuário não tem como perceber a diferença. Ver #37.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OverlayStatus {
+    /// O que o usuário pediu.
+    layer_shell_requested: bool,
+    /// O que está valendo.
+    layer_shell_active: bool,
+    /// Por que os dois diferem. `None` quando não diferem.
+    layer_shell_fallback: Option<String>,
+}
+
+#[tauri::command]
+fn overlay_status(state: tauri::State<'_, AppState>) -> OverlayStatus {
+    OverlayStatus {
+        layer_shell_requested: state.settings.lock().unwrap().layer_shell,
+        layer_shell_active: state.layer_shell_active.load(Ordering::SeqCst),
+        layer_shell_fallback: state.layer_shell_fallback.lock().unwrap().clone(),
+    }
 }
 
 #[tauri::command]
@@ -463,6 +509,7 @@ pub fn run() {
             open_settings,
             close_settings,
             toggle_overlay,
+            overlay_status,
             apply_compositor_rules,
             search_lyrics,
             apply_candidate,
@@ -494,6 +541,9 @@ pub fn run() {
                 settings: Mutex::new(settings.clone()),
                 settings_store,
                 generation: AtomicU64::new(0),
+                // Assume a preferência; a partida corrige se a camada não subir.
+                layer_shell_active: AtomicBool::new(settings.layer_shell),
+                layer_shell_fallback: Mutex::new(None),
             });
 
             tray::setup(app)?;
@@ -518,9 +568,20 @@ pub fn run() {
                 if geo.layer_shell {
                     if let Err(e) = overlay::layer_shell::init(&window, geo) {
                         eprintln!("[overlay] camada indisponível, usando janela comum: {e}");
+
+                        // Só o estado efetivo muda. A preferência do usuário
+                        // fica intacta no settings.json, para a camada voltar
+                        // sozinha se o ambiente melhorar. Ver #37.
+                        let state = app.state::<AppState>();
+                        state.layer_shell_active.store(false, Ordering::SeqCst);
+                        *state.layer_shell_fallback.lock().unwrap() = Some(e);
                         geo.layer_shell = false;
-                        app.state::<AppState>().settings.lock().unwrap().layer_shell = false;
                     }
+                }
+
+                // Antes do `show`, para a janela nunca chegar a nascer tilada.
+                if !geo.layer_shell {
+                    overlay::register_window_rules();
                 }
 
                 if !std::env::args().any(|a| a == "hide") {
