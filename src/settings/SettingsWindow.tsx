@@ -6,6 +6,12 @@ import LyricsPicker from "./LyricsPicker";
 import { useSettings } from "./useSettings";
 
 type CacheStats = { tracks: number; synced: number; pinned: number; misses: number };
+type UpdateInfo = {
+  current: string;
+  latest: string | null;
+  available: boolean;
+  canApply: boolean;
+};
 
 /** Um duplo clique em cima de um controle está mexendo nele, não fechando. */
 function emCimaDeControle(alvo: EventTarget | null): boolean {
@@ -16,10 +22,14 @@ export default function SettingsWindow() {
   const { settings, erro, update } = useSettings();
   const [fontes, setFontes] = useState<string[]>([]);
   const [cache, setCache] = useState<CacheStats | null>(null);
+  const [versao, setVersao] = useState<UpdateInfo | null>(null);
+  const [atualizando, setAtualizando] = useState(false);
+  const [erroUpdate, setErroUpdate] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<string[]>("list_fonts").then(setFontes).catch(() => setFontes([]));
     invoke<CacheStats>("cache_stats").then(setCache).catch(() => setCache(null));
+    invoke<UpdateInfo>("check_update").then(setVersao).catch(() => setVersao(null));
   }, []);
 
   if (!settings) {
@@ -234,6 +244,54 @@ export default function SettingsWindow() {
             </button>
           </Row>
         </Section>
+
+        {versao && (
+          <Section title="Versão">
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-[12px] text-white/55">
+                Instalada: <strong className="text-white/85">{versao.current}</strong>
+                {versao.available && versao.latest && (
+                  <>
+                    {" · "}
+                    <strong className="text-emerald-300">{versao.latest} disponível</strong>
+                  </>
+                )}
+              </span>
+              {versao.available && versao.canApply && (
+                <button
+                  onClick={async () => {
+                    setAtualizando(true);
+                    setErroUpdate(null);
+                    try {
+                      // Em caso de sucesso o app fecha e reabre sozinho; o
+                      // que vem depois desta linha só roda se algo falhar.
+                      await invoke("apply_update");
+                    } catch (e) {
+                      setErroUpdate(String(e));
+                      setAtualizando(false);
+                    }
+                  }}
+                  disabled={atualizando}
+                  className="shrink-0 rounded-md border border-emerald-400/40 bg-emerald-400/10 px-3 py-1 text-[12px] text-emerald-200 hover:bg-emerald-400/20 disabled:opacity-50"
+                >
+                  {atualizando ? "atualizando…" : "atualizar e reabrir"}
+                </button>
+              )}
+            </div>
+
+            {erroUpdate && <p className="text-[11px] text-rose-400/80">{erroUpdate}</p>}
+
+            {versao.available && !versao.canApply && (
+              <p className="text-[11px] leading-relaxed text-white/40">
+                Esta instalação não veio do script, então a atualização é pelo mesmo caminho que
+                você usou para instalar.
+              </p>
+            )}
+            {!versao.available && (
+              <p className="text-[11px] text-white/30">Esta é a versão mais recente.</p>
+            )}
+          </Section>
+        )}
 
         {cache && (
           <Section title="Cache">

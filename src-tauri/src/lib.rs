@@ -4,6 +4,7 @@ mod overlay;
 mod store;
 mod sync;
 mod tray;
+mod update;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -147,6 +148,23 @@ fn save_settings(app: AppHandle, mut settings: Settings) -> Result<Settings, Str
 #[tauri::command]
 fn open_settings(app: AppHandle) {
     overlay::open_settings(&app);
+}
+
+/// Há versão nova publicada?
+#[tauri::command]
+async fn check_update() -> Result<update::UpdateInfo, String> {
+    update::check().await
+}
+
+/// Baixa a versão nova e reabre o app já atualizado.
+#[tauri::command]
+fn apply_update(app: AppHandle) -> Result<(), String> {
+    update::apply()?;
+    update::restart_after_exit()?;
+    // O atalho global ficaria apontando para um processo que vai morrer.
+    clear_hotkey(&app);
+    app.exit(0);
+    Ok(())
 }
 
 #[tauri::command]
@@ -436,6 +454,8 @@ pub fn run() {
             now_playing,
             current_lyrics,
             cache_stats,
+            check_update,
+            apply_update,
             remember_overlay_position,
             center_overlay,
             get_settings,

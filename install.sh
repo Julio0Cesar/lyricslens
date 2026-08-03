@@ -80,9 +80,22 @@ info "extraindo"
 ( cd "$TMP" && ./app.AppImage --appimage-extract >/dev/null 2>&1 ) \
   || erro "não consegui extrair o pacote"
 
-rm -rf "$DESTINO"
-mkdir -p "$DESTINO"
-cp -a "$TMP/squashfs-root/." "$DESTINO/"
+# A troca é feita de lado e só então movida para o lugar. Apagar o destino
+# antes de copiar deixaria a instalação inexistente por alguns segundos — e se
+# o app estiver rodando dali, ele perde os próprios arquivos no meio do
+# caminho. `mv` dentro do mesmo sistema de arquivos é praticamente instantâneo.
+NOVO="$DESTINO.novo"
+ANTIGO="$DESTINO.antigo"
+
+rm -rf "$NOVO" "$ANTIGO"
+mkdir -p "$NOVO"
+cp -a "$TMP/squashfs-root/." "$NOVO/"
+
+if [ -d "$DESTINO" ]; then
+  mv "$DESTINO" "$ANTIGO"
+fi
+mv "$NOVO" "$DESTINO"
+rm -rf "$ANTIGO"
 
 # --- instalar ---------------------------------------------------------------
 
