@@ -23,9 +23,14 @@ export type LyricsStatus = "idle" | "searching" | "found" | "notFound";
 export function useLyrics(trackIdentity: string | null) {
   const [status, setStatus] = useState<LyricsStatus>("idle");
   const [lyrics, setLyrics] = useState<Lyrics | null>(null);
+  // A chave é montada no backend a partir de artista, título e álbum, com
+  // normalização — o frontend não tem como recompô-la, e ela é o que identifica
+  // a faixa no cache.
+  const [trackKey, setTrackKey] = useState<string | null>(null);
 
   useEffect(() => {
     const aplicar = (payload: LyricsEvent) => {
+      setTrackKey(payload.trackKey);
       switch (payload.status) {
         case "searching":
           setStatus("searching");
@@ -60,10 +65,11 @@ export function useLyrics(trackIdentity: string | null) {
     if (trackIdentity === null) {
       setStatus("idle");
       setLyrics(null);
+      setTrackKey(null);
     }
   }, [trackIdentity]);
 
-  return { status, lyrics };
+  return { status, lyrics, trackKey };
 }
 
 /**

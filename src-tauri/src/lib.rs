@@ -293,16 +293,33 @@ async fn search_lyrics(
 }
 
 /// Deixa a letra disponível offline.
+///
+/// Devolve o estado resultante: `false` também quando não havia letra guardada
+/// para fixar, para a interface não mostrar como fixada uma faixa que não está.
 #[tauri::command]
 fn pin_lyrics(
     state: tauri::State<'_, AppState>,
     track_key: String,
     pinned: bool,
-) -> Result<(), String> {
-    state
+) -> Result<bool, String> {
+    let aplicou = state
         .cache
         .set_pinned(&track_key, pinned)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok(pinned && aplicou)
+}
+
+#[tauri::command]
+fn is_pinned(state: tauri::State<'_, AppState>, track_key: String) -> Result<bool, String> {
+    state.cache.is_pinned(&track_key).map_err(|e| e.to_string())
+}
+
+/// A lista do modo offline: tudo que o usuário mandou manter.
+#[tauri::command]
+fn pinned_lyrics(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<store::cache::PinnedLyrics>, String> {
+    state.cache.pinned().map_err(|e| e.to_string())
 }
 
 /// Adota uma letra escolhida a dedo pelo usuário.
@@ -514,6 +531,8 @@ pub fn run() {
             search_lyrics,
             apply_candidate,
             pin_lyrics,
+            is_pinned,
+            pinned_lyrics,
             overlay::probe_environment,
             overlay::set_click_through,
             overlay::list_fonts,

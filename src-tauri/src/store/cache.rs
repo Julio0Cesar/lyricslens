@@ -24,6 +24,17 @@ pub struct Cache {
     conn: Mutex<Connection>,
 }
 
+/// Uma letra que o usuário mandou manter offline.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PinnedLyrics {
+    pub track_key: String,
+    pub artist: String,
+    pub title: String,
+    /// Sincronizada palavra a palavra, ou só o texto.
+    pub synced: bool,
+}
+
 #[derive(Debug, Default, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CacheStats {
@@ -244,13 +255,48 @@ impl Cache {
     }
 
     /// Fixa a letra para uso offline.
-    pub fn set_pinned(&self, track_key: &str, pinned: bool) -> Result<(), CacheError> {
+    ///
+    /// Devolve `false` quando não há letra guardada para essa faixa — fixar o
+    /// que não existe não faz sentido, e a interface precisa saber para não
+    /// mostrar como fixada uma faixa que não está.
+    pub fn set_pinned(&self, track_key: &str, pinned: bool) -> Result<bool, CacheError> {
         let conn = self.conn.lock().unwrap();
-        conn.execute(
+        let afetadas = conn.execute(
             "UPDATE lyrics SET pinned = ?2 WHERE track_key = ?1",
             params![track_key, pinned as i64],
         )?;
-        Ok(())
+        Ok(afetadas > 0)
+    }
+
+    pub fn is_pinned(&self, track_key: &str) -> Result<bool, CacheError> {
+        let conn = self.conn.lock().unwrap();
+        let fixada: Option<i64> = conn
+            .query_row(
+                "SELECT pinned FROM lyrics WHERE track_key = ?1",
+                params![track_key],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(fixada == Some(1))
+    }
+
+    /// As letras fixadas, para a lista do modo offline.
+    pub fn pinned(&self) -> Result<Vec<PinnedLyrics>, CacheError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT track_key, artist, title, lines_json IS NOT NULL AND lines_json != '[]'
+             FROM lyrics WHERE pinned = 1
+             ORDER BY artist COLLATE NOCASE, title COLLATE NOCASE",
+        )?;
+        let linhas = stmt.query_map([], |row| {
+            Ok(PinnedLyrics {
+                track_key: row.get(0)?,
+                artist: row.get(1)?,
+                title: row.get(2)?,
+                synced: row.get::<_, i64>(3)? != 0,
+            })
+        })?;
+        Ok(linhas.collect::<Result<Vec<_>, _>>()?)
     }
 }
 
@@ -318,6 +364,70 @@ mod tests {
 
         let lida = c.get(&t.key()).unwrap().unwrap();
         assert!(lida.translation.is_some(), "a tradução foi perdida");
+    }
+
+    #[test]
+    fn fixar_e_desafixar_uma_faixa_guardada() {
+        let c = Cache::in_memory().unwrap();
+        let t = faixa();
+        c.put(&t, &letra()).unwrap();
+
+        assert!(!c.is_pinned(&t.key()).unwrap(), "não nasce fixada");
+        assert!(c.set_pinned(&t.key(), true).unwrap(), "fixou");
+        assert!(c.is_pinned(&t.key()).unwrap());
+
+        assert!(c.set_pinned(&t.key(), false).unwrap(), "achou a faixa");
+        assert!(!c.is_pinned(&t.key()).unwrap());
+    }
+
+    /// Fixar o que não está no cache não pode passar por sucesso: a interface
+    /// mostraria a faixa como disponível offline sem nada guardado.
+    #[test]
+    fn fixar_faixa_sem_letra_guardada_nao_aplica() {
+        let c = Cache::in_memory().unwrap();
+        assert!(!c.set_pinned("nem|existe|isso", true).unwrap());
+        assert!(!c.is_pinned("nem|existe|isso").unwrap());
+    }
+
+    #[test]
+    fn a_lista_de_fixadas_traz_metadados_e_ignora_o_resto() {
+        let c = Cache::in_memory().unwrap();
+
+        let fixada = faixa();
+        c.put(&fixada, &letra()).unwrap();
+        c.set_pinned(&fixada.key(), true).unwrap();
+
+        let solta = Track {
+            title: "Outra".into(),
+            artist: "Alguém".into(),
+            ..Default::default()
+        };
+        c.put(&solta, &letra()).unwrap();
+
+        let lista = c.pinned().unwrap();
+        assert_eq!(lista.len(), 1, "só a fixada entra na lista");
+        assert_eq!(lista[0].artist, "Marisa Monte");
+        assert_eq!(lista[0].title, "Infinito Particular");
+        assert!(lista[0].synced, "esta tem letra sincronizada");
+        assert_eq!(lista[0].track_key, fixada.key());
+    }
+
+    /// Letra sem sincronia também pode ser mantida offline — mas a lista tem
+    /// que dizer qual é qual.
+    #[test]
+    fn a_lista_distingue_letra_sincronizada_de_texto_puro() {
+        let c = Cache::in_memory().unwrap();
+        let t = faixa();
+
+        let mut so_texto = letra();
+        so_texto.lines = Vec::new();
+        so_texto.plain = Some("uma letra sem marcação de tempo".into());
+        c.put(&t, &so_texto).unwrap();
+        c.set_pinned(&t.key(), true).unwrap();
+
+        let lista = c.pinned().unwrap();
+        assert_eq!(lista.len(), 1);
+        assert!(!lista[0].synced);
     }
 
     #[test]
