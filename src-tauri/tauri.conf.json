@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "lyricslens",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.kintiz.lyricslens",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -42,7 +42,11 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "rpm", "appimage"],
+    "targets": [
+      "deb",
+      "rpm",
+      "appimage"
+    ],
     "category": "Music",
     "shortDescription": "Overlay de letras sincronizadas",
     "longDescription": "Detecta a música tocando no sistema, busca a letra sincronizada e a mostra numa janela flutuante sobre qualquer aplicativo.",
@@ -59,10 +63,18 @@
     ],
     "linux": {
       "deb": {
-        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0", "libayatana-appindicator3-1"]
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1"
+        ]
       },
       "rpm": {
-        "depends": ["webkit2gtk4.1", "gtk3", "libayatana-appindicator-gtk3"]
+        "depends": [
+          "webkit2gtk4.1",
+          "gtk3",
+          "libayatana-appindicator-gtk3"
+        ]
       }
     }
   }
