@@ -87,7 +87,15 @@ cp -a "$TMP/squashfs-root/." "$DESTINO/"
 # --- instalar ---------------------------------------------------------------
 
 mkdir -p "$BIN" "$ATALHOS"
-ln -sf "$DESTINO/AppRun" "$BIN/$NOME"
+
+# Um symlink não serve: o AppRun se localiza por `dirname "$0"`, e através do
+# link isso aponta para a pasta do link, não para a instalação. O invólucro
+# chama o caminho real, então o AppRun encontra os próprios arquivos.
+cat > "$BIN/$NOME" <<EOF
+#!/bin/sh
+exec "$DESTINO/AppRun" "\$@"
+EOF
+chmod +x "$BIN/$NOME"
 
 for tamanho in 32 64 128 256; do
   mkdir -p "$ICONES/${tamanho}x${tamanho}/apps"
