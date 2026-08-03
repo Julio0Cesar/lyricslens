@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.3.0...v0.4.0) (2026-08-03)
+
+
+### Funcionalidades
+
+* **comportamento:** opção de iniciar com a sessão ([e642c01](https://github.com/Julio0Cesar/lyricslens/commit/e642c012027dbe4822ebd1015f9946340fa8d2d7))
+* **offline:** botão para manter a letra offline e lista das guardadas ([c74857a](https://github.com/Julio0Cesar/lyricslens/commit/c74857a1ae953536cbf59af2be673d04f4cc7974))
+
 ## [0.3.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.2.1...v0.3.0) (2026-08-03)
 
 
