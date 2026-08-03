@@ -8,10 +8,16 @@
 pub mod hotkey;
 pub mod layer_shell;
 
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{LogicalPosition, LogicalSize, Manager, WebviewWindow};
+
+/// O seletor tem que ser por título: a janela de configurações é do mesmo
+/// processo e da mesma classe (`Lyricslens`), e deve continuar sendo uma janela
+/// normal.
+const SELETOR: &str = "title:^(LyricsLens Overlay)$";
 
 pub const OVERLAY_LABEL: &str = "overlay";
 pub const SETTINGS_LABEL: &str = "settings";
@@ -83,6 +89,100 @@ pub(crate) fn hyprctl(args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+/// Qual sintaxe de `dispatch` o compositor desta máquina entende.
+///
+/// O Hyprland 0.55 trocou o parser do `hyprctl dispatch` por Lua. A sintaxe de
+/// string — `dispatch setfloating title:^(...)$` — deixou de existir e passou a
+/// devolver erro de sintaxe **de Lua**, não "dispatcher inválido". Como o app
+/// lia só o stdout e não checava o conteúdo, ele seguia achando que tinha dado
+/// certo: o resultado é o overlay parar de flutuar, de ser fixado e de assumir
+/// tamanho e posição, em silêncio, depois de uma atualização do compositor.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Dialeto {
+    /// `dispatch setfloating title:^(...)$`
+    Legado,
+    /// `dispatch hl.dsp.window.float{ window = hl.get_window("...") }`
+    Lua,
+}
+
+fn dialeto() -> Dialeto {
+    static CACHE: OnceLock<Dialeto> = OnceLock::new();
+    *CACHE.get_or_init(|| {
+        // Sonda sem efeito colateral nos dois lados: o seletor não casa com
+        // janela nenhuma, então o Hyprland antigo responde "ok" sem fazer nada
+        // e o novo falha no parser antes de chegar a agir.
+        let sonda = hyprctl(&["dispatch", "setfloating", "title:^(__lyricslens_probe__)$"])
+            .unwrap_or_default();
+        let d = if sonda.starts_with("error:") || sonda.contains("hl.dispatch") {
+            Dialeto::Lua
+        } else {
+            Dialeto::Legado
+        };
+        eprintln!("[overlay] hyprctl no dialeto {d:?}");
+        d
+    })
+}
+
+/// A janela do overlay, na forma que o dialeto Lua espera receber.
+fn alvo_lua() -> String {
+    format!("window = hl.get_window(\"{SELETOR}\")")
+}
+
+fn flutuar() -> Result<String, String> {
+    match dialeto() {
+        Dialeto::Legado => hyprctl(&["dispatch", "setfloating", SELETOR]),
+        // Na API Lua `float` é **toggle**, não setter: chamar numa janela que
+        // já flutua a devolve para o mosaico. Quem garante a idempotência é o
+        // chamador, lendo o estado antes.
+        Dialeto::Lua => hyprctl(&[
+            "dispatch",
+            &format!("hl.dsp.window.float{{ {} }}", alvo_lua()),
+        ]),
+    }
+}
+
+fn fixar() -> Result<String, String> {
+    match dialeto() {
+        Dialeto::Legado => hyprctl(&["dispatch", "pin", SELETOR]),
+        // `pin` também é toggle.
+        Dialeto::Lua => hyprctl(&[
+            "dispatch",
+            &format!("hl.dsp.window.pin{{ {} }}", alvo_lua()),
+        ]),
+    }
+}
+
+fn redimensionar(largura: i32, altura: i32) -> Result<String, String> {
+    match dialeto() {
+        Dialeto::Legado => hyprctl(&[
+            "dispatch",
+            "resizewindowpixel",
+            &format!("exact {largura} {altura},{SELETOR}"),
+        ]),
+        Dialeto::Lua => hyprctl(&[
+            "dispatch",
+            &format!(
+                "hl.dsp.window.resize{{ x = {largura}, y = {altura}, {} }}",
+                alvo_lua()
+            ),
+        ]),
+    }
+}
+
+fn mover(x: i32, y: i32) -> Result<String, String> {
+    match dialeto() {
+        Dialeto::Legado => hyprctl(&[
+            "dispatch",
+            "movewindowpixel",
+            &format!("exact {x} {y},{SELETOR}"),
+        ]),
+        Dialeto::Lua => hyprctl(&[
+            "dispatch",
+            &format!("hl.dsp.window.move{{ x = {x}, y = {y}, {} }}", alvo_lua()),
+        ]),
+    }
+}
+
 /// Pede ao compositor o que o Wayland não deixa a janela pedir por conta
 /// própria: flutuar, ficar fixa em todas as áreas de trabalho, e assumir
 /// tamanho e posição escolhidos.
@@ -110,23 +210,29 @@ pub fn apply_rules(window: &WebviewWindow, geo: Geometry) -> Result<String, Stri
         return Ok("compositor sem regras conhecidas — janela fica como o sistema decidir".into());
     }
 
-    let seletor = "title:^(LyricsLens Overlay)$";
-    hyprctl(&["dispatch", "setfloating", seletor])?;
-    hyprctl(&["dispatch", "pin", seletor])?;
-    hyprctl(&[
-        "dispatch",
-        "resizewindowpixel",
-        &format!("exact {} {},{seletor}", geo.width, geo.height),
-    ])?;
+    // Flutuar e fixar são toggles no dialeto Lua, então só são chamados quando
+    // o estado atual não é o desejado. Sem isto, reaplicar as regras — o que
+    // acontece a cada `show` e a cada mudança de geometria — desfaria o que a
+    // aplicação anterior fez.
+    let estado = cliente_overlay();
+    let bool_de = |campo: &str| {
+        estado
+            .as_ref()
+            .and_then(|c| c.get(campo))
+            .and_then(|v| v.as_bool())
+    };
 
-    let destino = posicao_desejada(window, geo);
+    if bool_de("floating") != Some(true) {
+        flutuar()?;
+    }
+    if bool_de("pinned") != Some(true) {
+        fixar()?;
+    }
 
-    if let Some((x, y)) = destino {
-        hyprctl(&[
-            "dispatch",
-            "movewindowpixel",
-            &format!("exact {x} {y},{seletor}"),
-        ])?;
+    redimensionar(geo.width, geo.height)?;
+
+    if let Some((x, y)) = posicao_desejada(window, geo) {
+        mover(x, y)?;
     }
 
     Ok("regras aplicadas".into())
@@ -260,32 +366,6 @@ fn posicao_desejada(window: &WebviewWindow, geo: Geometry) -> Option<(i32, i32)>
                 my + mh - geo.height - geo.margin_bottom,
             )
         })
-}
-
-/// Regras registradas *antes* de a janela ser mapeada.
-///
-/// O `dispatch setfloating` corrige depois do fato: a janela chega a nascer
-/// tilada, reorganiza todas as outras do workspace e ocupa metade da tela até
-/// alguém consertar. Uma `windowrule` já está valendo no instante em que o
-/// compositor mapeia a janela, então ela nunca chega a ser tilada. Ver #32.
-pub fn register_window_rules() {
-    if !is_hyprland() {
-        return;
-    }
-    for regra in ["float", "pin", "noborder"] {
-        // O seletor casa pelo título porque a classe (`Lyricslens`) é a mesma
-        // da janela de configurações, que deve continuar sendo uma janela
-        // normal.
-        let valor = format!("{regra}, title:^(LyricsLens Overlay)$");
-
-        // O Hyprland 0.56 depreciou `windowrulev2` e passou a aceitar a
-        // sintaxe v2 direto no `windowrule`; versões anteriores só entendem
-        // essa sintaxe no `windowrulev2`. Tentar os dois cobre as duas.
-        let saida = hyprctl(&["keyword", "windowrule", &valor]).unwrap_or_default();
-        if saida.to_lowercase().contains("invalid") {
-            let _ = hyprctl(&["keyword", "windowrulev2", &valor]);
-        }
-    }
 }
 
 /// Onde a janela está agora, segundo o compositor.

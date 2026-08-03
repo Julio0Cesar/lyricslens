@@ -33,3 +33,32 @@ body[data-window="overlay"] * {
 body[data-window="overlay"] ::selection {
   background: transparent;
 }
+
+/* Pulsação do indicador de instrumental.
+
+   Em CSS, e não pelo `motion`: a animação por JS reescreve o estilo inline a
+   cada quadro, o que força recálculo de estilo e repintura da superfície
+   inteira a 60fps — medido em 5% a 6% de um núcleo, permanente, enquanto o
+   intervalo instrumental durar. Uma animação declarativa de `opacity` o
+   compositor resolve sem passar pelo JS. Ver #39. */
+@keyframes lyricslens-pulsar {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.lyricslens-pulsar {
+  animation: lyricslens-pulsar 1.6s ease-in-out infinite;
+}
+
+/* Quem pediu menos movimento no sistema não quer três pontos piscando. */
+@media (prefers-reduced-motion: reduce) {
+  .lyricslens-pulsar {
+    animation: none;
+    opacity: 0.6;
+  }
+}

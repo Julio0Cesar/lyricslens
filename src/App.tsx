@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AnimatePresence, motion } from "motion/react";
@@ -74,8 +74,18 @@ function useAtraso(ativo: boolean, ms: number): boolean {
  * ao recuperar o foco, perguntamos ao compositor e guardamos.
  */
 function useArrastar() {
+  // Só depois de um arraste de verdade a posição do compositor representa uma
+  // escolha do usuário. Antes isto gravava a cada `focus`, o que inclui o foco
+  // que a janela ganha ao abrir — e aí o app salvava por cima da preferência
+  // do usuário a posição que o compositor tinha acabado de inventar, ainda
+  // antes de as regras serem aplicadas. Uma partida com a janela no lugar
+  // errado bastava para perder a posição guardada, para sempre.
+  const arrastou = useRef(false);
+
   useEffect(() => {
     const salvar = () => {
+      if (!arrastou.current) return;
+      arrastou.current = false;
       invoke("remember_overlay_position").catch(() => {});
     };
     window.addEventListener("focus", salvar);
@@ -91,6 +101,9 @@ function useArrastar() {
     const mover = (m: MouseEvent) => {
       if (Math.hypot(m.clientX - origem.x, m.clientY - origem.y) < 4) return;
       limpar();
+      // Marca antes de arrastar: a partir daqui o ponteiro é do compositor e o
+      // próximo `focus` é a soltura, que é quando vale guardar a posição.
+      arrastou.current = true;
       getCurrentWindow().startDragging().catch(() => {});
     };
     const limpar = () => {

@@ -579,11 +579,6 @@ pub fn run() {
                     }
                 }
 
-                // Antes do `show`, para a janela nunca chegar a nascer tilada.
-                if !geo.layer_shell {
-                    overlay::register_window_rules();
-                }
-
                 if !std::env::args().any(|a| a == "hide") {
                     let _ = window.show();
                     tauri::async_runtime::spawn(overlay::apply_rules_when_mapped(window, geo));

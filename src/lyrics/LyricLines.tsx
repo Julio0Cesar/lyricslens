@@ -52,21 +52,27 @@ function Karaoke({
   );
 }
 
-/** O intervalo instrumental, que no LRC é uma linha sem texto. */
+/**
+ * O intervalo instrumental, que no LRC é uma linha sem texto.
+ *
+ * A pulsação é CSS, não `motion`. Uma animação por JS reescreve o estilo inline
+ * a cada quadro e força repintura da superfície inteira a 60fps — enquanto o
+ * intervalo durar, e um intervalo instrumental dura dezenas de segundos. Medido
+ * em 5% a 6% de um núcleo, permanente. Ver #39.
+ */
 function Instrumental({ settings }: { settings: Settings }) {
   return (
     <div className="flex items-center gap-1.5" style={{ height: settings.fontSize * 1.3 }}>
       {[0, 1, 2].map((i) => (
-        <motion.span
+        <span
           key={i}
-          className="block rounded-full"
+          className="lyricslens-pulsar block rounded-full"
           style={{
             width: settings.fontSize * 0.18,
             height: settings.fontSize * 0.18,
             background: settings.dimColor,
+            animationDelay: `${i * 0.22}s`,
           }}
-          animate={{ opacity: [0.25, 1, 0.25] }}
-          transition={{ duration: 1.6, repeat: Infinity, delay: i * 0.22, ease: "easeInOut" }}
         />
       ))}
     </div>
