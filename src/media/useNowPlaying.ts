@@ -40,10 +40,30 @@ export type NowPlaying = {
 };
 
 /**
- * O backend manda âncoras esparsas; aqui a posição é extrapolada a 60fps.
- * Nenhum `setInterval` chamando o Rust — é isso que mantém o custo em ~zero.
+ * De quanto em quanto tempo a posição extrapolada vira uma renderização nova.
+ *
+ * Não é a taxa de quadros: é o passo a partir do qual o resultado na tela
+ * *muda*. O karaokê acende palavra por palavra e a transição de cor dura 260ms,
+ * então 100ms é imperceptível; o relógio do progresso conta segundos, e para
+ * ele 100ms já é sete vezes mais fino que o necessário.
  */
-export function useNowPlaying(): NowPlaying {
+export const PASSO_FINO_MS = 100;
+
+/** Sem karaokê nem barra de progresso, só a troca de linha muda a tela. */
+export const PASSO_GROSSO_MS = 400;
+
+/**
+ * O backend manda âncoras esparsas; aqui a posição é extrapolada localmente.
+ *
+ * A extrapolação acompanha os quadros, mas **só vira estado do React quando o
+ * valor cruza um passo** — antes ela chamava `setPositionMs` a cada quadro,
+ * inclusive com a música pausada e com o karaokê desligado. Como o karaokê é
+ * discreto (uma palavra está acesa ou não), a imensa maioria desses 60
+ * renders/s produzia DOM idêntico e ainda assim custava uma repintura da
+ * superfície inteira — 8% a 25% de um núcleo, escalando com a área da janela.
+ * Ver #39.
+ */
+export function useNowPlaying(passoMs: number = PASSO_FINO_MS): NowPlaying {
   const [track, setTrack] = useState<Track | null>(null);
   const [state, setState] = useState<PlaybackState>("stopped");
   const [confidence, setConfidence] = useState<"edge" | "sample" | null>(null);
@@ -79,11 +99,19 @@ export function useNowPlaying(): NowPlaying {
         }
 
         case "positionAnchored":
-          if (setAnchor(anchor, payload.positionMs)) setConfidence(payload.confidence);
+          if (setAnchor(anchor, payload.positionMs)) {
+            setConfidence(payload.confidence);
+            // Pausado não há laço rodando para perceber a âncora nova.
+            if (!playing.current) setPositionMs(payload.positionMs);
+          }
           break;
 
         case "seeked":
-          setAnchor(anchor, payload.positionMs);
+          // Buscar com a música pausada é justamente quando o laço está
+          // desligado — sem isto a tela ficaria na posição antiga.
+          if (setAnchor(anchor, payload.positionMs) && !playing.current) {
+            setPositionMs(payload.positionMs);
+          }
           break;
 
         case "gone":
@@ -101,15 +129,31 @@ export function useNowPlaying(): NowPlaying {
     };
   }, []);
 
+  const tocando = state === "playing";
+
   useEffect(() => {
+    // Parado, a posição não muda. Extrapolar a cada quadro era trabalho puro:
+    // com a música pausada o overlay consumia o mesmo que tocando.
+    if (!tocando) {
+      setPositionMs(estimate(anchor.current, false));
+      return;
+    }
+
     let raf = 0;
+    let ultimoPasso = -1;
     const frame = () => {
-      setPositionMs(estimate(anchor.current, playing.current));
+      const agora = estimate(anchor.current, true);
+      const passo = Math.floor(agora / passoMs);
+      // Um valor que cai no mesmo passo desenharia exatamente a mesma tela.
+      if (passo !== ultimoPasso) {
+        ultimoPasso = passo;
+        setPositionMs(agora);
+      }
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [tocando, passoMs]);
 
   return { track, state, positionMs, confidence };
 }

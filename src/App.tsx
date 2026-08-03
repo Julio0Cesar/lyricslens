@@ -2,13 +2,18 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AnimatePresence, motion } from "motion/react";
-import { formatMs, useNowPlaying } from "./media/useNowPlaying";
+import {
+  formatMs,
+  useNowPlaying,
+  PASSO_FINO_MS,
+  PASSO_GROSSO_MS,
+} from "./media/useNowPlaying";
 import LyricLines from "./lyrics/LyricLines";
 import { lineAt, lineProgress, useLyrics } from "./lyrics/useLyrics";
 import { useSettings, type Settings } from "./settings/useSettings";
 
 /** `#0a0a0e` + 0.55 → `rgba(10, 10, 14, 0.55)`. */
-function rgba(hex: string, alpha: number): string {
+export function rgba(hex: string, alpha: number): string {
   const limpo = hex.replace("#", "").slice(0, 6);
   if (limpo.length !== 6) return `rgba(0, 0, 0, ${alpha})`;
   const n = parseInt(limpo, 16);
@@ -102,10 +107,16 @@ function App() {
   // Todos os hooks antes de qualquer saída antecipada: o React exige que a
   // ordem e a quantidade sejam iguais em toda renderização, e um `return`
   // no meio derruba o componente inteiro quando as preferências chegam.
-  const { track, positionMs } = useNowPlaying();
+  const { settings } = useSettings();
+  // Sem karaokê e sem barra de progresso, a única coisa que muda na tela é a
+  // troca de linha — não há por que reavaliar a posição dez vezes por segundo.
+  const passo =
+    settings && !settings.karaoke && !settings.showProgress
+      ? PASSO_GROSSO_MS
+      : PASSO_FINO_MS;
+  const { track, positionMs } = useNowPlaying(passo);
   const identity = track ? `${track.artist}|${track.title}` : null;
   const { status, lyrics } = useLyrics(identity);
-  const { settings } = useSettings();
   const buscaDemorada = useAtraso(status === "searching", 700);
   const iniciarArraste = useArrastar();
 

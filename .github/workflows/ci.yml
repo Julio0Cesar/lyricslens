@@ -35,6 +35,11 @@ jobs:
       - name: Verificação de tipos
         run: pnpm exec tsc --noEmit
 
+      # As funções puras do frontend não tinham teste nenhum, e foi exatamente
+      # aí que apareceram os dois últimos defeitos de tela. Ver #9.
+      - name: Testes
+        run: pnpm test
+
       - name: Build
         run: pnpm build
 
