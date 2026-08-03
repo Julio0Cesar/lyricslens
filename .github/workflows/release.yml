@@ -61,8 +61,77 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: 1
         run: pnpm tauri build
 
+      # O linuxdeploy empacota o que o binário linka, sem distinguir o que pode
+      # viajar do que não pode. Biblioteca da pilha gráfica precisa casar com o
+      # driver, o compositor e o Mesa da máquina de destino — e o AppRun põe o
+      # `usr/lib/` do pacote na frente do LD_LIBRARY_PATH, então a versão
+      # empacotada sequestra a do sistema. Foi assim que a v0.2.1 saiu com uma
+      # libwayland velha demais para o Mesa 26, abrindo o overlay em branco.
+      #
+      # Deliberadamente não mexemos em libc/libstdc++/libgcc: são elas que
+      # tornam o AppImage utilizável em distribuição antiga, e não é delas que
+      # vem o descasamento com o driver. Ver #30 e #31.
+      - name: Enxugar o AppImage
+        run: |
+          set -euo pipefail
+          bundle=src-tauri/target/release/bundle/appimage
+          origem="$PWD/$(ls "$bundle"/*.AppImage | head -1)"
+          echo "antes:  $(du -h "$origem" | cut -f1)"
+
+          trabalho=$(mktemp -d)
+          ( cd "$trabalho" && "$origem" --appimage-extract >/dev/null )
+          raiz="$trabalho/squashfs-root"
+
+          rm -fv "$raiz"/usr/lib/libwayland-* \
+                 "$raiz"/usr/lib/libEGL* \
+                 "$raiz"/usr/lib/libGL* \
+                 "$raiz"/usr/lib/libgbm* \
+                 "$raiz"/usr/lib/libdrm* \
+                 "$raiz"/usr/lib/libglapi* \
+                 "$raiz"/usr/lib/libX11* || true
+
+          # O hook do linuxdeploy-plugin-gtk força GDK_BACKEND=x11, herdado de
+          # um crash do Tauri de 2024. O efeito é o pacote rodar sob XWayland:
+          # o binário distribuído não fala Wayland, justamente o contrário do
+          # que a arquitetura do app descreve. O .deb e o .rpm nunca tiveram
+          # esse hook — só o AppImage divergia. Ver #31.
+          hook="$raiz/apprun-hooks/linuxdeploy-plugin-gtk.sh"
+          if [ -f "$hook" ]; then
+            sed -i 's/^[[:space:]]*export GDK_BACKEND=x11/# GDK_BACKEND=x11 removido: ver #31/' "$hook"
+            if ! grep -q 'GDK_BACKEND=x11 removido' "$hook"; then
+              echo "::error::não achei o export GDK_BACKEND=x11 no hook — formato mudou, revisar #31"
+              exit 1
+            fi
+          fi
+
+          curl -fsSL -o "$trabalho/appimagetool" \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$trabalho/appimagetool"
+          rm -f "$origem"
+          ARCH=x86_64 "$trabalho/appimagetool" --appimage-extract-and-run "$raiz" "$origem"
+          echo "depois: $(du -h "$origem" | cut -f1)"
+
+      # Dez linhas que teriam evitado o #30. Se uma biblioteca da excludelist
+      # voltar ao pacote, a release para aqui em vez de sair quebrada.
+      - name: Conferir a excludelist do AppImage
+        run: |
+          set -euo pipefail
+          bundle=src-tauri/target/release/bundle/appimage
+          pacote="$PWD/$(ls "$bundle"/*.AppImage | head -1)"
+          trabalho=$(mktemp -d)
+          ( cd "$trabalho" && "$pacote" --appimage-extract >/dev/null )
+          proibidas=$(ls "$trabalho"/squashfs-root/usr/lib/ 2>/dev/null \
+            | grep -E '^(libwayland-|libEGL|libGL|libgbm|libdrm|libglapi|libX11)' || true)
+          if [ -n "$proibidas" ]; then
+            echo "::error::bibliotecas da excludelist voltaram ao pacote:"
+            echo "$proibidas"
+            exit 1
+          fi
+          echo "nenhuma biblioteca da excludelist no pacote."
+
       - name: Reunir os artefatos
         run: |
+          set -euo pipefail
           mkdir -p dist-release
           bundle=src-tauri/target/release/bundle
           cp "$bundle"/appimage/*.AppImage dist-release/lyricslens-x86_64.AppImage
@@ -70,9 +139,104 @@ jobs:
           cp "$bundle"/rpm/*.rpm          dist-release/lyricslens-x86_64.rpm
           # O instalador precisa do ícone para registrar o app no menu.
           cp src-tauri/icons/128x128.png  dist-release/lyricslens.png
+          # O install.sh confere este arquivo antes de extrair o pacote (#29).
+          ( cd dist-release && sha256sum ./* > SHA256SUMS && sed -i 's|\./||' SHA256SUMS )
           ls -la dist-release
+          cat dist-release/SHA256SUMS
 
-      - name: Publicar na release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-release
+          path: dist-release/
+          retention-days: 1
+
+  # A v0.2.1 saiu com o AppImage quebrado porque nada no pipeline chegava a
+  # instalar o artefato numa máquina que não fosse a de build. Estes testes são
+  # deterministas de propósito: instalam pelo caminho exato que o README manda
+  # usar, em contêiner limpo e sem dependência pré-instalada, e conferem que
+  # todo símbolo dinâmico resolve. Ver #33.
+  fumaca:
+    name: Instalação em ambiente limpo (${{ matrix.alvo }})
+    needs: [versao, pacotes]
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - alvo: deb
+            imagem: ubuntu:24.04
+            instalar: apt-get update -qq && apt-get install -y -qq ./lyricslens-x86_64.deb
+          - alvo: rpm
+            imagem: fedora:41
+            instalar: dnf install -y -q ./lyricslens-x86_64.rpm
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-release
+
+      - name: Instalar o pacote e conferir os símbolos
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:/pacotes" -w /pacotes ${{ matrix.imagem }} sh -euc '
+            ${{ matrix.instalar }}
+            echo "--- instalado; conferindo as dependências dinâmicas"
+            faltando=$(ldd /usr/bin/lyricslens | grep "not found" || true)
+            if [ -n "$faltando" ]; then
+              echo "o pacote não declara tudo o que o binário precisa:"
+              echo "$faltando"
+              exit 1
+            fi
+            echo "todos os símbolos resolvem."
+          '
+
+      - name: Conferir que o AppImage é autossuficiente
+        if: matrix.alvo == 'deb'
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:/pacotes" -w /tmp ubuntu:24.04 sh -euc '
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends ca-certificates file
+            cp /pacotes/lyricslens-x86_64.AppImage .
+            chmod +x lyricslens-x86_64.AppImage
+            ./lyricslens-x86_64.AppImage --appimage-extract >/dev/null
+            echo "--- conferindo os símbolos com o LD_LIBRARY_PATH que o AppRun monta"
+            faltando=$(LD_LIBRARY_PATH=/tmp/squashfs-root/usr/lib \
+              ldd /tmp/squashfs-root/usr/bin/lyricslens | grep "not found" || true)
+            if [ -n "$faltando" ]; then
+              echo "o AppImage não é autossuficiente numa máquina sem as dependências:"
+              echo "$faltando"
+              exit 1
+            fi
+            echo "o AppImage resolve tudo sozinho."
+          '
+
+  publicar:
+    name: Publicar
+    needs: [versao, pacotes, fumaca]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist-release
+          path: dist-release
+
+      - name: Anexar os pacotes à release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ needs.versao.outputs.tag }}" dist-release/* --clobber
+
+      # Muita gente chega direto na página de Releases, pelo badge ou por busca,
+      # sem passar pelo README — e lá não havia nenhuma instrução de instalação
+      # nem indicação de qual dos três arquivos baixar. Ver #28.
+      - name: Acrescentar as instruções de instalação
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.versao.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" --json body --jq .body > corpo.md
+          printf '\n' >> corpo.md
+          cat .github/release-footer.md >> corpo.md
+          gh release edit "$TAG" --notes-file corpo.md
