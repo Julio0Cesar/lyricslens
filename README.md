@@ -4,131 +4,198 @@
 
 # LyricsLens
 
-**Letras sincronizadas sobre qualquer aplicativo.**
+**Synced lyrics on top of any application.**
 
-Detecta o que está tocando no sistema, busca a letra e a mostra numa janela
-flutuante — acompanhando a música palavra por palavra.
+Detects what is playing on your system, fetches the lyrics and shows them in a
+floating window — following the song word by word.
+
+**English** | [Português](README.pt-BR.md)
 
 [![CI](https://github.com/Julio0Cesar/lyricslens/actions/workflows/ci.yml/badge.svg)](https://github.com/Julio0Cesar/lyricslens/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Julio0Cesar/lyricslens?label=vers%C3%A3o)](https://github.com/Julio0Cesar/lyricslens/releases)
-[![Licença](https://img.shields.io/github/license/Julio0Cesar/lyricslens)](LICENSE)
+[![Version](https://img.shields.io/github/v/release/Julio0Cesar/lyricslens?label=version)](https://github.com/Julio0Cesar/lyricslens/releases)
+[![License](https://img.shields.io/github/license/Julio0Cesar/lyricslens)](LICENSE)
 
 </div>
 
+<!-- #20 — the GIF of the overlay in action goes here, right below the title.
+     Record ~5s with music playing, lyrics following word by word, over any
+     window. Save it as assets/demo.gif and replace this comment with:
+
+     <div align="center"><img src="assets/demo.gif" alt="The overlay following the lyrics" width="720"></div>
+
+     A second image of the settings window (assets/settings.png) goes in the
+     Usage section. -->
+
 ---
 
-## Instalação
+## Installation
+
+> **Linux · x86_64 · Wayland or X11.** No Windows yet ([#5](https://github.com/Julio0Cesar/lyricslens/issues/5)).
+
+### Debian, Ubuntu, Mint
+
+Download the `.deb` from [Releases](https://github.com/Julio0Cesar/lyricslens/releases/latest), then:
+
+```bash
+sudo apt install ./lyricslens-x86_64.deb
+```
+
+### Fedora, openSUSE
+
+Download the `.rpm` from [Releases](https://github.com/Julio0Cesar/lyricslens/releases/latest), then:
+
+```bash
+sudo dnf install ./lyricslens-x86_64.rpm
+```
+
+`apt install ./file.deb` and `dnf install ./file.rpm` resolve dependencies.
+`dpkg -i` and `rpm -i` do not — they fail with unmet dependencies and leave the
+package half-installed.
+
+### Arch, NixOS, or no sudo
+
+The script installs into `~/.local` and touches nothing outside your home
+directory:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Julio0Cesar/lyricslens/main/install.sh | sh
 ```
 
-Instala em `~/.local`, sem sudo. Depois é só apertar **Super** e procurar por
-*LyricsLens*.
+If you would rather read it before running it — and you should:
 
-Para remover:
+```bash
+curl -fsSL https://raw.githubusercontent.com/Julio0Cesar/lyricslens/main/install.sh -o install.sh
+less install.sh && sh install.sh
+```
+
+Then press **Super** and search for *LyricsLens*. To remove it:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Julio0Cesar/lyricslens/main/install.sh | sh -s -- --remove
 ```
 
-<details>
-<summary>Pacotes da distribuição</summary>
+### Verifying the download
 
-Cada release traz `.deb`, `.rpm` e `.AppImage` em
-[Releases](https://github.com/Julio0Cesar/lyricslens/releases/latest).
+Every release publishes a `SHA256SUMS`. `install.sh` checks it for you; to
+verify a package you downloaded by hand:
 
 ```bash
-# Debian, Ubuntu e derivados
-sudo dpkg -i lyricslens-x86_64.deb
-
-# Fedora, openSUSE e derivados
-sudo rpm -i lyricslens-x86_64.rpm
+curl -LO https://github.com/Julio0Cesar/lyricslens/releases/latest/download/SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing
 ```
 
-O AppImage funciona direto, mas exige `libfuse2` para ser montado — o script de
-instalação evita isso extraindo o conteúdo.
+## Requirements
 
-</details>
+- Linux, x86_64
+- `webkit2gtk-4.1`, `gtk3`, `libayatana-appindicator` — the `.deb` and `.rpm`
+  pull these in automatically; the AppImage bundles them
+- A player that exposes MPRIS: Spotify, Chromium, Firefox, VLC…
 
-## Uso
+### Compatibility by desktop environment
 
-O app vive na bandeja do sistema. Fechar a janela **esconde** o overlay; sair é
-decisão explícita, pelo menu da bandeja.
+On Wayland the compositor owns the window, so behaviour varies. This table
+records what was actually tested:
 
-| Ação | Como |
+| Environment | Overlay | Always on top | Automatic positioning | Global hotkey |
+|---|---|---|---|---|
+| Hyprland (Wayland) | ✅ | ✅ | ✅ | ✅ via `hyprctl` |
+| Sway, river, other wlroots | untested ¹ | untested ¹ | ❌ | manual |
+| KDE Plasma (Wayland) | untested | untested | ❌ | manual |
+| GNOME (Wayland) | untested | ❌ ² | ❌ | manual |
+| X11 (any WM) | untested | untested | ❌ | manual |
+
+Only Hyprland has actually been tested. The rest is what the protocol implies,
+not a report from use — if you run it on any of them, a comment on
+[#24](https://github.com/Julio0Cesar/lyricslens/issues/24) fills in the row.
+
+¹ Should work through `wlr-layer-shell`, which those compositors implement.
+² GNOME does not implement `wlr-layer-shell`, so the overlay falls back to an
+ordinary window and cannot stay above fullscreen.
+
+*Automatic positioning* and *global hotkey* currently only know Hyprland — in
+any other environment, use your own keybinding to call `lyricslens toggle` (see
+[Usage](#usage)). Widening that is
+[#12](https://github.com/Julio0Cesar/lyricslens/issues/12); a blank row in the
+table is a request for help, not an oversight.
+
+## Usage
+
+The app lives in the system tray. Closing the window **hides** the overlay;
+quitting is an explicit choice, from the tray menu.
+
+| Action | How |
 |---|---|
-| Mostrar / esconder | Clique no ícone da bandeja, ou o atalho global |
-| Abrir configurações | **Duplo clique** no overlay |
-| Fechar configurações | **Duplo clique** fora dos controles |
-| Mover o overlay | Arraste |
-| Corrigir a letra errada | Configurações → *Letra desta faixa* |
+| Show / hide | Click the tray icon, or the global hotkey |
+| Open settings | **Double click** on the overlay |
+| Close settings | **Double click** outside the controls |
+| Move the overlay | Drag it |
+| Fix the wrong lyrics | Settings → *Lyrics for this track* |
 
-### Atalho global
+### Global hotkey
 
-Em **Configurações → Comportamento → Atalho global**, pressione a combinação que
-quiser.
+In **Settings → Behaviour → Global hotkey**, press whatever combination you
+want.
 
-Wayland não deixa um aplicativo registrar um atalho de sistema — quem registra é
-o compositor. No Hyprland o app pede isso via `hyprctl`, apontando de volta para
-o próprio executável. Nada é escrito na sua configuração: o compositor esquece o
-atalho ao reiniciar e o app o reaplica toda vez que sobe.
+Wayland does not let an application register a system-wide hotkey — the
+compositor does. On Hyprland the app asks for it through `hyprctl`, pointing
+back at its own executable. Nothing is written to your config: the compositor
+forgets the hotkey when it restarts and the app reapplies it every time it comes
+up.
 
-Em outros ambientes, use o keybind do seu sistema chamando:
+In other environments, use your system's keybinding to call:
 
 ```bash
-lyricslens toggle     # mostra ou esconde
-lyricslens settings   # abre as configurações
+lyricslens toggle     # show or hide
+lyricslens settings   # open settings
 lyricslens hide
-lyricslens            # mostra
+lyricslens            # show
 ```
 
-## Como funciona
+## How it works
 
 ```
-MPRIS (D-Bus) ──▶ detecção da faixa ──▶ busca da letra (LRCLIB) ──▶ cache local
-                                                                       │
-                                                    engine de sync ────┘
-                                                           │
-                                                    overlay (React)
+MPRIS (D-Bus) ──▶ track detection ──▶ lyrics lookup (LRCLIB) ──▶ local cache
+                                                                     │
+                                                    sync engine ─────┘
+                                                          │
+                                                   overlay (React)
 ```
 
-O backend em Rust é dono do estado e do relógio; o frontend apenas desenha e
-interpola entre os ticks. Isso mantém o consumo próximo de zero.
+The Rust backend owns the state and the clock; the frontend only draws and
+interpolates between ticks.
 
-Duas decisões carregam o resto do projeto, e as duas vieram de medição, não de
-palpite — o raciocínio está em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md):
+Two decisions carry the rest of the project, and both came from measurement
+rather than guesswork — the reasoning is in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md):
 
-- **A posição da música é ancorada na *borda*, não na leitura.** Várias fontes
-  reportam a posição arredondada para o segundo. Ancorar no instante em que o
-  valor vira derruba o erro de ±1000ms para ±71ms.
-- **Em Wayland, quem manda na janela é o compositor.** Ficar por cima, escolher
-  posição, registrar atalho — nada disso o aplicativo pode fazer sozinho. Tudo
-  passa por pedido ao compositor.
-
-## Requisitos
-
-- Linux com Wayland ou X11 — o posicionamento automático hoje conhece o Hyprland
-- `webkit2gtk-4.1`, `gtk3`, `libayatana-appindicator`
-- Um player que exponha MPRIS: Spotify, Chromium, Firefox, VLC…
+- **Playback position is anchored on the *edge*, not on the reading.** Many
+  sources report position rounded to the second. Anchoring on the instant the
+  value flips brings the error down from ±1000ms to ±71ms.
+- **On Wayland the compositor owns the window.** Staying on top, choosing a
+  position, registering a hotkey — an application cannot do any of that on its
+  own. It all goes through a request to the compositor.
 
 ## Status
 
-| Área | Estado |
+| Area | State |
 |---|---|
-| Detecção de mídia (MPRIS) | pronto |
-| Letras sincronizadas (LRCLIB) | pronto |
-| Overlay always-on-top | pronto, inclusive sobre tela cheia |
-| Bandeja + atalho global | pronto |
-| Cache local (SQLite) | pronto |
-| Janela de configurações | pronto |
-| Escolha manual da letra | pronto |
-| Modo offline | [#2](https://github.com/Julio0Cesar/lyricslens/issues/2) |
-| Capa do álbum | [#3](https://github.com/Julio0Cesar/lyricslens/issues/3) |
-| Tradução | [#1](https://github.com/Julio0Cesar/lyricslens/issues/1) |
+| Media detection (MPRIS) | done |
+| Synced lyrics (LRCLIB) | done |
+| Always-on-top overlay | done, including over fullscreen |
+| Tray + global hotkey | done |
+| Local cache (SQLite) | done |
+| Settings window | done |
+| Manual lyrics override | done |
+| Offline mode | [#2](https://github.com/Julio0Cesar/lyricslens/issues/2) |
+| Album art | [#3](https://github.com/Julio0Cesar/lyricslens/issues/3) |
+| English interface | [#11](https://github.com/Julio0Cesar/lyricslens/issues/11) |
+| Lyrics translation | [#1](https://github.com/Julio0Cesar/lyricslens/issues/1) |
 | Windows | [#5](https://github.com/Julio0Cesar/lyricslens/issues/5) |
 
-## Desenvolvimento
+> The interface is currently in Portuguese only. English is
+> [#11](https://github.com/Julio0Cesar/lyricslens/issues/11).
+
+## Development
 
 ```bash
 pnpm install
@@ -136,26 +203,29 @@ pnpm tauri dev
 ```
 
 ```bash
-cd src-tauri && cargo test    # 48 testes
+cd src-tauri && cargo test    # 48 tests
 pnpm exec tsc --noEmit
 ```
 
-### Versionamento
+### Versioning
 
-As versões saem sozinhas dos commits, seguindo
-[Conventional Commits](https://www.conventionalcommits.org/pt-br/):
+Versions come straight out of the commits, following
+[Conventional Commits](https://www.conventionalcommits.org/):
 
-| Prefixo | Efeito em `X.Y.Z` |
+| Prefix | Effect on `X.Y.Z` |
 |---|---|
 | `fix:` | `Z` |
 | `feat:` | `Y` |
-| `feat!:` ou `BREAKING CHANGE:` | `X` |
-| `docs:`, `chore:`, `test:` | nenhum |
+| `feat!:` or `BREAKING CHANGE:` | `X` |
+| `docs:`, `chore:`, `test:` | none |
 
-Ao entrar na `main`, o `release-please` abre um PR de release com o CHANGELOG e
-a versão nova. Quando esse PR é aprovado, a tag é criada e os pacotes são
-construídos e publicados automaticamente.
+On landing in `main`, `release-please` opens a release PR with the CHANGELOG and
+the new version. When that PR is approved the tag is created, the packages are
+built, installed in a clean container as a check, and only then published.
 
-## Licença
+Issues and commit messages are in Portuguese; that is deliberate and does not
+affect contributions in English.
+
+## License
 
 [MIT](LICENSE)
