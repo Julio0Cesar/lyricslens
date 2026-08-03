@@ -12,10 +12,23 @@
 
 use super::{hyprctl, is_hyprland};
 
-/// Como o app se identifica ao ser chamado pelo atalho.
+/// O comando que o compositor deve executar ao receber o atalho.
+///
+/// Dentro de um AppImage, `current_exe` aponta para o binário lá dentro — e ele
+/// não roda sozinho: o WebKit procura seus processos auxiliares por caminhos que
+/// só existem depois que o `AppRun` monta o ambiente. Um atalho apontando para
+/// lá funcionaria enquanto o app já estivesse aberto (a instância única
+/// repassaria o argumento) e morreria justamente quando fosse mais necessário,
+/// com o app fechado.
+///
+/// O ponto de entrada correto é o `AppRun`, e o próprio ambiente diz onde ele
+/// está.
 fn comando_toggle() -> Option<String> {
-    let exe = std::env::current_exe().ok()?;
-    Some(format!("{} toggle", exe.display()))
+    let alvo = match std::env::var("APPDIR") {
+        Ok(dir) => std::path::PathBuf::from(dir).join("AppRun"),
+        Err(_) => std::env::current_exe().ok()?,
+    };
+    Some(format!("{} toggle", alvo.display()))
 }
 
 /// Troca o atalho ativo. Os dois lados podem ser vazios: `""` significa
