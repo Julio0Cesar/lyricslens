@@ -93,7 +93,10 @@ export default function SettingsWindow() {
               onChange={(v) => update({ backgroundColor: v })}
             />
           </Row>
-          <Row label="Opacidade do fundo" hint="0 deixa o fundo invisível">
+          <Row
+            label="Opacidade do fundo"
+            hint="0 deixa o fundo invisível — o desfoque atrás vem do compositor"
+          >
             <Slider
               value={settings.backgroundOpacity}
               min={0}
@@ -101,9 +104,6 @@ export default function SettingsWindow() {
               step={0.05}
               onChange={(v) => update({ backgroundOpacity: v })}
             />
-          </Row>
-          <Row label="Desfoque" hint="borra o conteúdo atrás do painel">
-            <Toggle value={settings.blur} onChange={(v) => update({ blur: v })} />
           </Row>
           <Row label="Arredondamento">
             <Slider

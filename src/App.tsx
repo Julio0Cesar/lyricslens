@@ -131,7 +131,7 @@ function App() {
             : null;
 
   return (
-    <div className="flex h-full flex-col p-2 font-sans">
+    <div className="flex h-full flex-col font-sans">
       <div
         onMouseDown={iniciarArraste}
         onDoubleClick={() => invoke("open_settings")}
@@ -142,7 +142,15 @@ function App() {
           background: rgba(settings.backgroundColor, settings.backgroundOpacity),
           borderRadius: `${settings.cornerRadius}px`,
           fontFamily: settings.fontFamily || undefined,
-          backdropFilter: settings.blur ? "blur(14px)" : undefined,
+          // Nada de `backdrop-filter` aqui. Ele borra o que está atrás do
+          // elemento *dentro da página* — e atrás desta página não há página
+          // nenhuma, só o desktop, que pertence ao compositor. Numa janela
+          // transparente ele não tem o que amostrar e desenha lixo: foi o que
+          // embaralhava a letra com a opacidade no mínimo.
+          border:
+            settings.backgroundOpacity > 0
+              ? "1px solid rgba(255,255,255,0.08)"
+              : "none",
           justifyContent: "center",
           alignItems: settings.textAlign === "center" ? "center" : "stretch",
         }}
