@@ -309,6 +309,20 @@ fn pin_lyrics(
     Ok(pinned && aplicou)
 }
 
+/// Iniciar com a sessão. O estado é a existência do `.desktop`, não uma
+/// preferência gravada — assim a interface nunca mostra ligado o que o usuário
+/// apagou por fora.
+#[tauri::command]
+fn autostart_enabled() -> bool {
+    store::autostart::is_enabled()
+}
+
+#[tauri::command]
+fn set_autostart(enabled: bool) -> Result<bool, String> {
+    store::autostart::set_enabled(enabled)?;
+    Ok(store::autostart::is_enabled())
+}
+
 #[tauri::command]
 fn is_pinned(state: tauri::State<'_, AppState>, track_key: String) -> Result<bool, String> {
     state.cache.is_pinned(&track_key).map_err(|e| e.to_string())
@@ -533,6 +547,8 @@ pub fn run() {
             pin_lyrics,
             is_pinned,
             pinned_lyrics,
+            autostart_enabled,
+            set_autostart,
             overlay::probe_environment,
             overlay::set_click_through,
             overlay::list_fonts,

@@ -25,6 +25,26 @@ export default function SettingsWindow() {
   const [versao, setVersao] = useState<UpdateInfo | null>(null);
   const [atualizando, setAtualizando] = useState(false);
   const [erroUpdate, setErroUpdate] = useState<string | null>(null);
+  // O estado do autostart é a existência do `.desktop`, não uma preferência
+  // gravada: se o usuário apagar o arquivo por fora, o toggle concorda.
+  const [autostart, setAutostart] = useState(false);
+  const [erroAutostart, setErroAutostart] = useState<string | null>(null);
+
+  useEffect(() => {
+    invoke<boolean>("autostart_enabled").then(setAutostart).catch(() => {});
+  }, []);
+
+  async function alternarAutostart(valor: boolean) {
+    setErroAutostart(null);
+    try {
+      // O backend devolve o estado real depois de mexer no arquivo, não o
+      // pedido — se a escrita falhar pela metade, a UI mostra o que de fato há.
+      setAutostart(await invoke<boolean>("set_autostart", { enabled: valor }));
+    } catch (e) {
+      setErroAutostart(String(e));
+      invoke<boolean>("autostart_enabled").then(setAutostart).catch(() => {});
+    }
+  }
 
   useEffect(() => {
     invoke<string[]>("list_fonts").then(setFontes).catch(() => setFontes([]));
@@ -169,6 +189,14 @@ export default function SettingsWindow() {
               value={settings.hideWhenPaused}
               onChange={(v) => update({ hideWhenPaused: v })}
             />
+          </Row>
+          <Row
+            label="Iniciar com o sistema"
+            hint={
+              erroAutostart ?? "sobe direto para a bandeja, sem abrir o overlay"
+            }
+          >
+            <Toggle value={autostart} onChange={alternarAutostart} />
           </Row>
           <Row label="Ajuste de sincronia" hint="negativo adianta a letra">
             <Slider

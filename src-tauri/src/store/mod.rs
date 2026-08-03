@@ -1,5 +1,6 @@
 //! Persistência local.
 
+pub mod autostart;
 pub mod cache;
 pub mod settings;
 
