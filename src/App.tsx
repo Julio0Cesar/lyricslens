@@ -131,7 +131,7 @@ function App() {
             : null;
 
   return (
-    <div className="flex h-full flex-col font-sans">
+    <div className="flex h-full flex-col font-sans select-none">
       <div
         onMouseDown={iniciarArraste}
         onDoubleClick={() => invoke("open_settings")}

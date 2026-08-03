@@ -14,8 +14,22 @@ body,
   --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-/* Arrastar a janela selecionaria o texto da letra no caminho. */
-body[data-window="overlay"] {
+/* A letra não é texto para copiar: é legenda.
+   Selecionar só atrapalha — arrastar a janela ia marcando as frases no
+   caminho, e o realce ficava aceso sobre um fundo transparente.
+
+   O WebKitGTK ainda quer a forma com prefixo, e `user-select` não vale para
+   descendentes que a redefinam, daí o seletor pegar tudo. O realce também é
+   apagado, para o caso de a seleção acontecer por outro caminho — teclado,
+   por exemplo. */
+body[data-window="overlay"],
+body[data-window="overlay"] * {
+  -webkit-user-select: none;
   user-select: none;
+  -webkit-user-drag: none;
   cursor: default;
+}
+
+body[data-window="overlay"] ::selection {
+  background: transparent;
 }
