@@ -156,13 +156,27 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # O `archive.ubuntu.com` estrangula o runner: no run 30931482562 o
+          # `libjavascriptcoregtk` (8 MB) levou 2min32 — ~54 KB/s — e os 25 MB do
+          # webkit não couberam nos 20 minutos de timeout. Os runners do GitHub
+          # rodam no Azure e têm um espelho ao lado; só o contêiner é que vem
+          # apontando para o genérico. É a explicação da assimetria com o
+          # Fedora, que faz o mesmo trabalho em 33s.
+          #
+          # Os retries e o timeout de rede do apt vão junto: eles estavam no
+          # #60 mas o squash não os levou para o main.
+          #
           # `--no-install-recommends` / `install_weak_deps=False` não são só
           # velocidade: o teste pergunta se o pacote **declara** o que o binário
           # precisa, e recommends instalados por tabela podem fazer um símbolo
           # resolver por sorte. Sem eles, só as dependências declaradas contam.
           - alvo: deb
             imagem: ubuntu:24.04
-            instalar: apt-get update -qq && apt-get install -y --no-install-recommends ./lyricslens-x86_64.deb
+            instalar: >-
+              export DEBIAN_FRONTEND=noninteractive APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=30";
+              sed -i -e "s|//archive.ubuntu.com|//azure.archive.ubuntu.com|g" -e "s|//security.ubuntu.com|//azure.archive.ubuntu.com|g" /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null || true;
+              apt-get $APT_OPTS update -qq &&
+              apt-get $APT_OPTS install -y --no-install-recommends ./lyricslens-x86_64.deb
           - alvo: rpm
             imagem: fedora:41
             instalar: dnf install -y --setopt=install_weak_deps=False ./lyricslens-x86_64.rpm
@@ -215,10 +229,16 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm -v "$PWD:/pacotes" -w /tmp ubuntu:24.04 sh -euc '
+            export DEBIAN_FRONTEND=noninteractive
+            APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+            echo "--- apontando o apt para o espelho do Azure"
+            sed -i -e "s|//archive.ubuntu.com|//azure.archive.ubuntu.com|g" \
+                   -e "s|//security.ubuntu.com|//azure.archive.ubuntu.com|g" \
+                   /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null || true
             echo "--- apt-get update"
-            apt-get update -qq
+            apt-get $APT_OPTS update -qq
             echo "--- instalando a pilha gráfica do sistema"
-            apt-get install -y --no-install-recommends ca-certificates file \
+            apt-get $APT_OPTS install -y --no-install-recommends ca-certificates file \
               libgl1 libegl1 libgbm1 libdrm2 \
               libwayland-client0 libwayland-cursor0 libwayland-egl1 libwayland-server0 \
               libx11-6 libx11-xcb1 libxcb1 \
