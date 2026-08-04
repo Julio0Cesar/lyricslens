@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.5.0...v0.6.0) (2026-08-04)
+
+
+### Funcionalidades
+
+* **log:** arquivo de log e erros que o usuário pode resolver na tela ([#65](https://github.com/Julio0Cesar/lyricslens/issues/65)) ([1f82f1f](https://github.com/Julio0Cesar/lyricslens/commit/1f82f1f227acbaddc3f131504554880843769aba))
+
 ## [0.5.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.4.0...v0.5.0) (2026-08-04)
 
 
