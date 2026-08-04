@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { Dicionario } from "../i18n";
 
 /**
  * Nomes que o Hyprland usa e que não são simplesmente a tecla em maiúscula.
@@ -50,9 +51,11 @@ function traduzir(e: React.KeyboardEvent): string | null {
 export default function HotkeyCapture({
   value,
   onChange,
+  t,
 }: {
   value: string;
   onChange: (v: string) => void;
+  t: Dicionario;
 }) {
   const [capturando, setCapturando] = useState(false);
 
@@ -76,7 +79,7 @@ export default function HotkeyCapture({
             : "border-white/15 bg-white/6 text-white/80 hover:bg-white/12"
         }`}
       >
-        {capturando ? "pressione…" : value || "nenhum"}
+        {capturando ? t["hotkey.capturing"] : value || t["hotkey.none"]}
       </button>
       {value && !capturando && (
         <button

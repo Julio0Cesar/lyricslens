@@ -60,6 +60,22 @@ pub enum LyricsError {
     Decode(String),
 }
 
+/// Como cada falha de busca chega à tela.
+///
+/// O `Decode` vira um código próprio de propósito: "o LRCLIB respondeu algo
+/// estranho" e "não consegui falar com o LRCLIB" mandam o usuário para lados
+/// diferentes — um é problema do serviço, o outro pode ser a rede dele.
+impl From<LyricsError> for crate::i18n::UiError {
+    fn from(e: LyricsError) -> Self {
+        use crate::i18n::UiError;
+        match e {
+            LyricsError::NotFound => UiError::new("lyrics.notFound"),
+            LyricsError::Network(m) => UiError::new("lyrics.network").arg("motivo", m),
+            LyricsError::Decode(m) => UiError::new("lyrics.decode").arg("motivo", m),
+        }
+    }
+}
+
 /// Contrato de qualquer fonte de letra.
 pub trait LyricsProvider: Send + Sync {
     /// Busca exata pela assinatura da faixa.

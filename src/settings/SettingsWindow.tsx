@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ColorPicker, Row, Section, Select, Slider, Toggle } from "./controls";
 import HotkeyCapture from "./HotkeyCapture";
 import LyricsPicker from "./LyricsPicker";
+import { traduzirErro } from "../i18n";
 import { useSettings } from "./useSettings";
 
 type CacheStats = { tracks: number; synced: number; pinned: number; misses: number };
@@ -19,7 +20,7 @@ function emCimaDeControle(alvo: EventTarget | null): boolean {
 }
 
 export default function SettingsWindow() {
-  const { settings, status, erro, update } = useSettings();
+  const { settings, status, erro, update, t } = useSettings();
   const [fontes, setFontes] = useState<string[]>([]);
   const [cache, setCache] = useState<CacheStats | null>(null);
   const [versao, setVersao] = useState<UpdateInfo | null>(null);
@@ -41,7 +42,7 @@ export default function SettingsWindow() {
       // pedido — se a escrita falhar pela metade, a UI mostra o que de fato há.
       setAutostart(await invoke<boolean>("set_autostart", { enabled: valor }));
     } catch (e) {
-      setErroAutostart(String(e));
+      setErroAutostart(traduzirErro(t, e));
       invoke<boolean>("autostart_enabled").then(setAutostart).catch(() => {});
     }
   }
@@ -53,7 +54,7 @@ export default function SettingsWindow() {
   }, []);
 
   if (!settings) {
-    return <div className="p-6 text-sm text-white/40">carregando…</div>;
+    return <div className="p-6 text-sm text-white/40">{t["settings.loading"]}</div>;
   }
 
   return (
@@ -65,12 +66,12 @@ export default function SettingsWindow() {
     >
       <div className="mx-auto flex max-w-lg flex-col gap-7 p-6">
         <header className="flex items-baseline justify-between">
-          <h1 className="text-lg font-semibold">Configurações</h1>
+          <h1 className="text-lg font-semibold">{t["settings.title"]}</h1>
           <button
             onClick={() => invoke("toggle_overlay")}
             className="rounded-md border border-white/15 bg-white/6 px-2 py-1 text-[11px] text-white/70 hover:bg-white/12"
           >
-            mostrar / ocultar overlay
+            {t["settings.toggleOverlay"]}
           </button>
         </header>
 
@@ -80,20 +81,23 @@ export default function SettingsWindow() {
           </p>
         )}
 
-        <LyricsPicker />
+        <LyricsPicker t={t} />
 
-        <Section title="Aparência">
-          <Row label="Fonte" hint={fontes.length ? `${fontes.length} instaladas` : "do sistema"}>
+        <Section title={t["section.appearance"]}>
+          <Row
+            label={t["font.label"]}
+            hint={fontes.length ? t["font.count"](fontes.length) : t["font.systemHint"]}
+          >
             <Select
               value={settings.fontFamily}
               onChange={(v) => update({ fontFamily: v })}
               options={[
-                { value: "", label: "Do sistema" },
+                { value: "", label: t["font.systemOption"] },
                 ...fontes.map((f) => ({ value: f, label: f })),
               ]}
             />
           </Row>
-          <Row label="Tamanho da letra">
+          <Row label={t["fontSize.label"]}>
             <Slider
               value={settings.fontSize}
               min={10}
@@ -102,7 +106,7 @@ export default function SettingsWindow() {
               onChange={(v) => update({ fontSize: v })}
             />
           </Row>
-          <Row label="Peso">
+          <Row label={t["fontWeight.label"]}>
             <Slider
               value={settings.fontWeight}
               min={100}
@@ -111,21 +115,21 @@ export default function SettingsWindow() {
               onChange={(v) => update({ fontWeight: v })}
             />
           </Row>
-          <Row label="Cor do texto">
+          <Row label={t["textColor.label"]}>
             <ColorPicker value={settings.textColor} onChange={(v) => update({ textColor: v })} />
           </Row>
-          <Row label="Cor do texto apagado" hint="linhas ainda não cantadas">
+          <Row label={t["dimColor.label"]} hint={t["dimColor.hint"]}>
             <ColorPicker value={settings.dimColor} onChange={(v) => update({ dimColor: v })} />
           </Row>
-          <Row label="Cor do fundo">
+          <Row label={t["backgroundColor.label"]}>
             <ColorPicker
               value={settings.backgroundColor}
               onChange={(v) => update({ backgroundColor: v })}
             />
           </Row>
           <Row
-            label="Opacidade do fundo"
-            hint="0 deixa o fundo invisível — o desfoque atrás vem do compositor"
+            label={t["backgroundOpacity.label"]}
+            hint={t["backgroundOpacity.hint"]}
           >
             <Slider
               value={settings.backgroundOpacity}
@@ -135,7 +139,7 @@ export default function SettingsWindow() {
               onChange={(v) => update({ backgroundOpacity: v })}
             />
           </Row>
-          <Row label="Arredondamento">
+          <Row label={t["cornerRadius.label"]}>
             <Slider
               value={settings.cornerRadius}
               min={0}
@@ -146,59 +150,72 @@ export default function SettingsWindow() {
           </Row>
         </Section>
 
-        <Section title="Conteúdo">
-          <Row label="Linhas de contexto" hint="a anterior e a próxima">
+        <Section title={t["section.content"]}>
+          <Row label={t["contextLines.label"]} hint={t["contextLines.hint"]}>
             <Toggle
               value={settings.showContextLines}
               onChange={(v) => update({ showContextLines: v })}
             />
           </Row>
-          <Row label="Informação da faixa" hint="fonte, artista e título">
+          <Row label={t["trackInfo.label"]} hint={t["trackInfo.hint"]}>
             <Toggle value={settings.showTrackInfo} onChange={(v) => update({ showTrackInfo: v })} />
           </Row>
-          <Row label="Barra de progresso">
+          <Row label={t["progressBar.label"]}>
             <Toggle value={settings.showProgress} onChange={(v) => update({ showProgress: v })} />
           </Row>
-          <Row label="Varredura de karaokê" hint="acende a linha conforme ela é cantada">
+          <Row label={t["karaoke.label"]} hint={t["karaoke.hint"]}>
             <Toggle value={settings.karaoke} onChange={(v) => update({ karaoke: v })} />
           </Row>
-          <Row label="Alinhamento">
+          <Row label={t["align.label"]}>
             <Select
               value={settings.textAlign}
               onChange={(v) => update({ textAlign: v })}
               options={[
-                { value: "left", label: "À esquerda" },
-                { value: "center", label: "Centralizado" },
+                { value: "left", label: t["align.left"] },
+                { value: "center", label: t["align.center"] },
               ]}
             />
           </Row>
         </Section>
 
-        <Section title="Comportamento">
-          <Row label="Atalho global" hint="mostra e esconde o overlay">
+        <Section title={t["section.behaviour"]}>
+          <Row label={t["language.label"]} hint={t["language.hint"]}>
+            <Select
+              value={settings.language}
+              onChange={(v) => update({ language: v })}
+              options={[
+                { value: "auto", label: t["language.auto"] },
+                // Os nomes dos idiomas ficam em si mesmos, não traduzidos:
+                // quem procura o próprio idioma numa interface que não entende
+                // precisa reconhecer a palavra, não a tradução dela.
+                { value: "pt-BR", label: "Português" },
+                { value: "en", label: "English" },
+              ]}
+            />
+          </Row>
+          <Row label={t["hotkey.label"]} hint={t["hotkey.hint"]}>
             <HotkeyCapture
               value={settings.hotkey}
               onChange={(v) => update({ hotkey: v })}
+              t={t}
             />
           </Row>
-          <Row label="Cliques atravessam" hint="o overlay deixa de responder ao mouse">
+          <Row label={t["clickThrough.label"]} hint={t["clickThrough.hint"]}>
             <Toggle value={settings.clickThrough} onChange={(v) => update({ clickThrough: v })} />
           </Row>
-          <Row label="Esconder quando pausado">
+          <Row label={t["hideWhenPaused.label"]}>
             <Toggle
               value={settings.hideWhenPaused}
               onChange={(v) => update({ hideWhenPaused: v })}
             />
           </Row>
           <Row
-            label="Iniciar com o sistema"
-            hint={
-              erroAutostart ?? "sobe direto para a bandeja, sem abrir o overlay"
-            }
+            label={t["autostart.label"]}
+            hint={erroAutostart ?? t["autostart.hint"]}
           >
             <Toggle value={autostart} onChange={alternarAutostart} />
           </Row>
-          <Row label="Ajuste de sincronia" hint="negativo adianta a letra">
+          <Row label={t["syncOffset.label"]} hint={t["syncOffset.hint"]}>
             <Slider
               value={settings.syncOffsetMs}
               min={-3000}
@@ -210,8 +227,8 @@ export default function SettingsWindow() {
           </Row>
         </Section>
 
-        <Section title="Janela">
-          <Row label="Largura">
+        <Section title={t["section.window"]}>
+          <Row label={t["width.label"]}>
             <Slider
               value={settings.width}
               min={240}
@@ -221,7 +238,7 @@ export default function SettingsWindow() {
               onChange={(v) => update({ width: v })}
             />
           </Row>
-          <Row label="Altura">
+          <Row label={t["height.label"]}>
             <Slider
               value={settings.height}
               min={80}
@@ -231,7 +248,7 @@ export default function SettingsWindow() {
               onChange={(v) => update({ height: v })}
             />
           </Row>
-          <Row label="Distância do rodapé">
+          <Row label={t["marginBottom.label"]}>
             <Slider
               value={settings.marginBottom}
               min={0}
@@ -242,11 +259,11 @@ export default function SettingsWindow() {
             />
           </Row>
           <Row
-            label="Posição"
+            label={t["position.label"]}
             hint={
               settings.positionX !== null
-                ? `fixada em ${settings.positionX}, ${settings.positionY}`
-                : "rodapé central · arraste o overlay para mudar"
+                ? t["position.pinned"](settings.positionX, settings.positionY ?? 0)
+                : t["position.auto"]
             }
           >
             <button
@@ -254,40 +271,43 @@ export default function SettingsWindow() {
               disabled={settings.positionX === null}
               className="rounded-md border border-white/15 bg-white/6 px-2 py-1 text-[11px] text-white/70 hover:bg-white/12 disabled:opacity-40"
             >
-              centralizar
+              {t["position.center"]}
             </button>
           </Row>
           <Row
-            label="Camada do compositor"
+            label={t["layerShell.label"]}
             hint={
               // Quando a camada não sobe, a opção aparecia ligada enquanto na
               // prática não estava em uso, e nada indicava o porquê.
               settings.layerShell && status && !status.layerShellActive
-                ? `ligada, mas sem efeito nesta sessão — ${status.layerShellFallback ?? "indisponível"}`
-                : "fica acima até de tela cheia, mas deixa de ser arrastável · exige reiniciar o app"
+                ? t["layerShell.inactive"](
+                    status.layerShellFallback ?? t["layerShell.unavailable"],
+                  )
+                : t["layerShell.hint"]
             }
           >
             <Toggle value={settings.layerShell} onChange={(v) => update({ layerShell: v })} />
           </Row>
-          <Row label="" hint="reaplica flutuar, fixar, tamanho e posição">
+          <Row label="" hint={t["reapply.hint"]}>
             <button
               onClick={() => invoke("apply_compositor_rules")}
               className="rounded-md border border-white/15 bg-white/6 px-2 py-1 text-[11px] text-white/70 hover:bg-white/12"
             >
-              recolocar agora
+              {t["reapply.button"]}
             </button>
           </Row>
         </Section>
 
         {versao && (
-          <Section title="Versão">
+          <Section title={t["section.version"]}>
             <div className="flex items-center justify-between gap-4">
               <span className="text-[12px] text-white/55">
-                Instalada: <strong className="text-white/85">{versao.current}</strong>
+                {t["version.installed"]}{" "}
+                <strong className="text-white/85">{versao.current}</strong>
                 {versao.available && versao.latest && (
                   <>
                     {" · "}
-                    <strong className="text-emerald-300">{versao.latest} disponível</strong>
+                    <strong className="text-emerald-300">{t["version.available"](versao.latest)}</strong>
                   </>
                 )}
               </span>
@@ -301,14 +321,14 @@ export default function SettingsWindow() {
                       // que vem depois desta linha só roda se algo falhar.
                       await invoke("apply_update");
                     } catch (e) {
-                      setErroUpdate(String(e));
+                      setErroUpdate(traduzirErro(t, e));
                       setAtualizando(false);
                     }
                   }}
                   disabled={atualizando}
                   className="shrink-0 rounded-md border border-emerald-400/40 bg-emerald-400/10 px-3 py-1 text-[12px] text-emerald-200 hover:bg-emerald-400/20 disabled:opacity-50"
                 >
-                  {atualizando ? "atualizando…" : "atualizar e reabrir"}
+                  {atualizando ? t["version.updating"] : t["version.update"]}
                 </button>
               )}
             </div>
@@ -317,37 +337,32 @@ export default function SettingsWindow() {
 
             {versao.available && !versao.canApply && (
               <p className="text-[11px] leading-relaxed text-white/40">
-                Esta instalação não veio do script, então a atualização é pelo mesmo caminho que
-                você usou para instalar.
+                {t["version.notFromScript"]}
               </p>
             )}
             {!versao.available && (
-              <p className="text-[11px] text-white/30">Esta é a versão mais recente.</p>
+              <p className="text-[11px] text-white/30">{t["version.upToDate"]}</p>
             )}
           </Section>
         )}
 
         {cache && (
-          <Section title="Cache">
+          <Section title={t["section.cache"]}>
             <p className="text-[12px] leading-relaxed text-white/55">
               <strong className="text-white/85">{cache.tracks}</strong>{" "}
-              {cache.tracks === 1 ? "faixa guardada" : "faixas guardadas"}
-              {cache.synced > 0 && <> · {cache.synced} com sincronia</>}
-              {cache.pinned > 0 && <> · {cache.pinned} fixadas para offline</>}
-              {cache.misses > 0 && <> · {cache.misses} sem letra conhecida</>}
+              {t["cache.tracks"](cache.tracks)}
+              {cache.synced > 0 && <> · {t["cache.synced"](cache.synced)}</>}
+              {cache.pinned > 0 && <> · {t["cache.pinned"](cache.pinned)}</>}
+              {cache.misses > 0 && <> · {t["cache.misses"](cache.misses)}</>}
             </p>
             <p className="text-[11px] leading-relaxed text-white/30">
-              Música que já tocou não vai à rede de novo. Faixa sem letra também é lembrada, para
-              a busca não ser refeita a cada vez — esse registro caduca em três dias, porque letra
-              nova entra no LRCLIB o tempo todo.
+              {t["cache.explanation"]}
             </p>
           </Section>
         )}
 
         <p className="pb-2 text-[11px] leading-relaxed text-white/30">
-          As preferências ficam em <code>settings.json</code>, no diretório de dados do app. Em
-          Wayland, tamanho e posição são pedidos ao compositor — a janela não decide por conta
-          própria.
+          {t["settings.footer"]}
         </p>
       </div>
     </div>

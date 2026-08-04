@@ -2,6 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
+import {
+  resolverIdioma,
+  textos,
+  traduzirErro,
+  type Idioma,
+  type PreferenciaIdioma,
+} from "../i18n";
+
 export type TextAlign = "left" | "center";
 
 export type Settings = {
@@ -25,6 +33,7 @@ export type Settings = {
   hideWhenPaused: boolean;
   syncOffsetMs: number;
   hotkey: string;
+  language: PreferenciaIdioma;
 
   width: number;
   height: number;
@@ -55,7 +64,12 @@ export type OverlayStatus = {
 export function useSettings() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [status, setStatus] = useState<OverlayStatus | null>(null);
-  const [erro, setErro] = useState<string | null>(null);
+  // O idioma do sistema vem do backend: o webview não enxerga o `LANG` da
+  // sessão. Não muda em tempo de execução, então basta ler uma vez.
+  const [idiomaDoSistema, setIdiomaDoSistema] = useState<Idioma | null>(null);
+  // Guardado cru, não traduzido: o idioma pode mudar depois de o erro
+  // acontecer, e a frase precisa acompanhar.
+  const [erroBruto, setErroBruto] = useState<unknown>(null);
   const pendente = useRef<number | undefined>(undefined);
 
   useEffect(() => {
@@ -63,6 +77,7 @@ export function useSettings() {
     // Não muda em tempo de execução — o tipo da superfície é definido antes de
     // a janela existir —, então basta ler uma vez.
     invoke<OverlayStatus>("overlay_status").then(setStatus);
+    invoke<Idioma>("system_language").then(setIdiomaDoSistema).catch(() => {});
 
     const un = listen<Settings>("settings", ({ payload }) => setSettings(payload));
     return () => {
@@ -82,12 +97,12 @@ export function useSettings() {
 
       window.clearTimeout(pendente.current);
       pendente.current = window.setTimeout(() => {
-        setErro(null);
+        setErroBruto(null);
         // Uma recusa do backend — combinação que o compositor não aceitou,
         // por exemplo — precisa aparecer, senão a UI mostra um estado que
         // não foi gravado.
         invoke("save_settings", { settings: proximo }).catch((e) => {
-          setErro(String(e));
+          setErroBruto(e);
           invoke<Settings>("get_settings").then(setSettings);
         });
       }, 150);
@@ -96,5 +111,16 @@ export function useSettings() {
     });
   }, []);
 
-  return { settings, status, erro, update };
+  const idioma = resolverIdioma(settings?.language, idiomaDoSistema);
+  const t = textos(idioma);
+
+  return {
+    settings,
+    status,
+    /** Já traduzido para o idioma da vez. */
+    erro: erroBruto === null ? null : traduzirErro(t, erroBruto),
+    update,
+    idioma,
+    t,
+  };
 }

@@ -10,6 +10,7 @@
 //! instalação de lado. Aqui só descobrimos que há versão nova e chamamos o
 //! script que já sabe fazer isso.
 
+use crate::i18n::UiError;
 use serde::{Deserialize, Serialize};
 
 pub const ATUAL: &str = env!("CARGO_PKG_VERSION");
@@ -93,24 +94,22 @@ pub async fn check() -> Result<UpdateInfo, String> {
 }
 
 /// Roda o instalador, que baixa a release e troca a instalação de lado.
-pub fn apply() -> Result<(), String> {
+pub fn apply() -> Result<(), UiError> {
     if !instalado_pelo_script() {
-        return Err("esta instalação não foi feita pelo script — atualize pelo mesmo caminho que usou para instalar".into());
+        return Err(UiError::new("update.notFromScript"));
     }
 
     let saida = std::process::Command::new("sh")
         .arg("-c")
         .arg(format!("curl -fsSL {INSTALADOR} | sh"))
         .output()
-        .map_err(|e| format!("não consegui executar o instalador: {e}"))?;
+        .map_err(|e| UiError::new("update.failed").arg("motivo", e))?;
 
     if saida.status.success() {
         Ok(())
     } else {
-        Err(format!(
-            "a instalação falhou: {}",
-            String::from_utf8_lossy(&saida.stderr).trim()
-        ))
+        Err(UiError::new("update.failed")
+            .arg("motivo", String::from_utf8_lossy(&saida.stderr).trim()))
     }
 }
 
@@ -119,8 +118,9 @@ pub fn apply() -> Result<(), String> {
 /// A ordem importa: se o novo processo subisse antes, a instância única o
 /// mandaria repassar os argumentos para o processo velho e ele sairia sem
 /// abrir nada. Por isso quem espera é um shell solto, olhando o PID.
-pub fn restart_after_exit() -> Result<(), String> {
-    let appdir = std::env::var("APPDIR").map_err(|_| "sem APPDIR".to_string())?;
+pub fn restart_after_exit() -> Result<(), UiError> {
+    let appdir = std::env::var("APPDIR")
+        .map_err(|_| UiError::new("update.failed").arg("motivo", "sem APPDIR"))?;
     let pid = std::process::id();
 
     std::process::Command::new("sh")
@@ -129,7 +129,7 @@ pub fn restart_after_exit() -> Result<(), String> {
             "while kill -0 {pid} 2>/dev/null; do sleep 0.2; done; exec '{appdir}/AppRun'"
         ))
         .spawn()
-        .map_err(|e| format!("não consegui agendar a reabertura: {e}"))?;
+        .map_err(|e| UiError::new("update.failed").arg("motivo", e))?;
 
     Ok(())
 }

@@ -1,3 +1,4 @@
+mod i18n;
 mod lyrics;
 mod media;
 mod overlay;
@@ -112,6 +113,15 @@ fn current_lyrics(state: tauri::State<'_, AppState>) -> Option<LyricsEvent> {
     state.last_lyrics.lock().unwrap().clone()
 }
 
+/// O idioma do sistema, para o frontend resolver a preferência `auto`.
+///
+/// Existe porque o webview não tem essa informação: o `navigator.language` de
+/// um WebKit embarcado reporta o locale do processo, não o `LANG` da sessão.
+#[tauri::command]
+fn system_language() -> i18n::Language {
+    i18n::do_sistema()
+}
+
 #[tauri::command]
 fn get_settings(state: tauri::State<'_, AppState>) -> Settings {
     state.settings.lock().unwrap().clone()
@@ -120,7 +130,7 @@ fn get_settings(state: tauri::State<'_, AppState>) -> Settings {
 /// Grava as preferências e propaga o efeito de cada uma para onde ela vale:
 /// o relógio, a geometria da janela, e as janelas abertas.
 #[tauri::command]
-fn save_settings(app: AppHandle, mut settings: Settings) -> Result<Settings, String> {
+fn save_settings(app: AppHandle, mut settings: Settings) -> Result<Settings, i18n::UiError> {
     settings.sanitize();
 
     let state = app.state::<AppState>();
@@ -141,7 +151,7 @@ fn save_settings(app: AppHandle, mut settings: Settings) -> Result<Settings, Str
     state
         .settings_store
         .save(&settings)
-        .map_err(|e| format!("não consegui gravar as preferências: {e}"))?;
+        .map_err(|e| i18n::UiError::new("settings.write").arg("motivo", e))?;
 
     state
         .now_playing
@@ -204,7 +214,7 @@ async fn check_update() -> Result<update::UpdateInfo, String> {
 
 /// Baixa a versão nova e reabre o app já atualizado.
 #[tauri::command]
-fn apply_update(app: AppHandle) -> Result<(), String> {
+fn apply_update(app: AppHandle) -> Result<(), i18n::UiError> {
     update::apply()?;
     update::restart_after_exit()?;
     // O atalho global ficaria apontando para um processo que vai morrer.
@@ -247,7 +257,7 @@ fn remember_overlay_position(app: AppHandle) -> Option<(i32, i32)> {
 
 /// Devolve o overlay ao rodapé central.
 #[tauri::command]
-fn center_overlay(app: AppHandle) -> Result<(), String> {
+fn center_overlay(app: AppHandle) -> Result<(), i18n::UiError> {
     {
         let state = app.state::<AppState>();
         let mut settings = state.settings.lock().unwrap();
@@ -261,7 +271,9 @@ fn center_overlay(app: AppHandle) -> Result<(), String> {
 
     let geo = geometry(&app);
     match app.get_webview_window(overlay::OVERLAY_LABEL) {
-        Some(window) => overlay::apply_rules(&window, geo).map(|_| ()),
+        Some(window) => overlay::apply_rules(&window, geo)
+            .map(|_| ())
+            .map_err(|e| i18n::UiError::new("overlay.rules").arg("motivo", e)),
         None => Ok(()),
     }
 }
@@ -273,9 +285,13 @@ fn toggle_overlay(app: AppHandle) {
 }
 
 #[tauri::command]
-fn apply_compositor_rules(app: AppHandle, window: tauri::WebviewWindow) -> Result<String, String> {
+fn apply_compositor_rules(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<String, i18n::UiError> {
     let geo = geometry(&app);
     overlay::apply_rules(&window, geo)
+        .map_err(|e| i18n::UiError::new("overlay.rules").arg("motivo", e))
 }
 
 /// Alternativas para o usuário escolher quando a busca automática erra.
@@ -284,12 +300,12 @@ async fn search_lyrics(
     state: tauri::State<'_, AppState>,
     artist: String,
     title: String,
-) -> Result<Vec<Candidate>, String> {
+) -> Result<Vec<Candidate>, i18n::UiError> {
     state
         .provider
         .search(&artist, &title)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(Into::into)
 }
 
 /// Deixa a letra disponível offline.
@@ -301,11 +317,11 @@ fn pin_lyrics(
     state: tauri::State<'_, AppState>,
     track_key: String,
     pinned: bool,
-) -> Result<bool, String> {
+) -> Result<bool, i18n::UiError> {
     let aplicou = state
         .cache
         .set_pinned(&track_key, pinned)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| i18n::UiError::new("cache.write").arg("motivo", e))?;
     Ok(pinned && aplicou)
 }
 
@@ -318,7 +334,7 @@ fn autostart_enabled() -> bool {
 }
 
 #[tauri::command]
-fn set_autostart(enabled: bool) -> Result<bool, String> {
+fn set_autostart(enabled: bool) -> Result<bool, i18n::UiError> {
     store::autostart::set_enabled(enabled)?;
     Ok(store::autostart::is_enabled())
 }
@@ -537,6 +553,7 @@ pub fn run() {
             center_overlay,
             get_settings,
             save_settings,
+            system_language,
             open_settings,
             close_settings,
             toggle_overlay,
