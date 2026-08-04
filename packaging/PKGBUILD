@@ -1,0 +1,60 @@
+# Maintainer: Julio0Cesar <https://github.com/Julio0Cesar>
+#
+# Este arquivo é gerado pelo workflow de release a cada versão — a `pkgver` e as
+# somas saem da release recém-publicada. Editar à mão vale só para o que não
+# depende da versão; o resto é sobrescrito. Ver #6.
+#
+# Publicar no AUR exige conta e chave SSH do mantenedor, então esse passo é
+# manual por natureza:
+#
+#   git clone ssh://aur@aur.archlinux.org/lyricslens-bin.git
+#   cp packaging/PKGBUILD lyricslens-bin/
+#   cd lyricslens-bin && makepkg --printsrcinfo > .SRCINFO
+#   git commit -am "$(grep -m1 ^pkgver PKGBUILD | cut -d= -f2)" && git push
+
+pkgname=lyricslens-bin
+pkgver=0.9.0
+pkgrel=1
+pkgdesc="Letras sincronizadas sobre qualquer aplicativo"
+arch=('x86_64')
+url="https://github.com/Julio0Cesar/lyricslens"
+license=('MIT')
+# O tarball não traz biblioteca nenhuma — é o ponto dele. Estas são as mesmas
+# que o .deb e o .rpm declaram.
+depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator' 'gtk-layer-shell')
+provides=('lyricslens')
+conflicts=('lyricslens')
+options=('!strip')
+
+source=("lyricslens-$pkgver-x86_64.tar.gz::$url/releases/download/v$pkgver/lyricslens-x86_64.tar.gz"
+        "lyricslens-$pkgver.png::$url/releases/download/v$pkgver/lyricslens.png")
+sha256sums=('d7231411b26d06e0cd4b5de9b1e138cb4687db24536d10812b92ad40b5fe9204'
+            '5836e78467d9c4873c8d86d2a9ff13ef5e09be1ece1e7729b407b9592c160974')
+
+package() {
+  install -Dm755 "$srcdir/lyricslens/bin/lyricslens" "$pkgdir/usr/bin/lyricslens"
+
+  # O tarball já traz os tamanhos que o app gera; o .png solto cobre o 128 para
+  # o caso de uma release antiga não os ter.
+  for tamanho in 32 64 128 256; do
+    origem="$srcdir/lyricslens/share/icons/hicolor/${tamanho}x${tamanho}/apps/lyricslens.png"
+    [ -f "$origem" ] && install -Dm644 "$origem" \
+      "$pkgdir/usr/share/icons/hicolor/${tamanho}x${tamanho}/apps/lyricslens.png"
+  done
+  install -Dm644 "$srcdir/lyricslens-$pkgver.png" \
+    "$pkgdir/usr/share/icons/hicolor/128x128/apps/lyricslens.png"
+
+  install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/lyricslens.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=LyricsLens
+GenericName=Overlay de letras
+Comment=Letras sincronizadas sobre qualquer aplicativo
+Exec=lyricslens
+Icon=lyricslens
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+Keywords=letra;lyrics;musica;music;karaoke;overlay;
+StartupWMClass=Lyricslens
+DESKTOP
+}

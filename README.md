@@ -62,6 +62,14 @@ are already on your system, **82MB** (self-contained) if they are not.
 curl -fsSL https://raw.githubusercontent.com/Julio0Cesar/lyricslens/main/install.sh | sh
 ```
 
+On Arch you can also build the package yourself — `packaging/PKGBUILD` in this
+repository always points at the latest release:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/Julio0Cesar/lyricslens/main/packaging/PKGBUILD
+makepkg -si
+```
+
 If you would rather read it before running it — and you should:
 
 ```bash
