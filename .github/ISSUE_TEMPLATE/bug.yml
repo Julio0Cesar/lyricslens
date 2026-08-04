@@ -1,0 +1,65 @@
+name: Bug report
+description: Something does not work
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The three commands below answer most of what
+        would otherwise be a round trip of questions — please run them before
+        writing anything else.
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: |
+        Output of the two commands. `--paths` tells us where your log, cache
+        and preferences live; the log is the only place several failures are
+        recorded, because a desktop app launched from the menu has no visible
+        stderr.
+      render: shell
+      value: |
+        $ lyricslens --version
+
+        $ lyricslens --paths
+
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        Compositor and session type matter more than the distribution here —
+        on Wayland the compositor owns the window, so where the overlay ends up
+        is its decision, not the app's.
+      render: shell
+      value: |
+        distribution:
+        compositor (Hyprland, Sway, KDE, GNOME…):
+        session (echo $XDG_SESSION_TYPE):
+        installed from (install.sh / .deb / .rpm / AppImage / source):
+        player (Spotify, Firefox, VLC…):
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: |
+        The tail of the log file `--paths` pointed at. Paste the lines around
+        the moment it failed — the whole file is rarely needed.
+      render: text
+    validations:
+      required: false

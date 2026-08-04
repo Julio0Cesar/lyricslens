@@ -150,6 +150,21 @@ lyricslens hide
 lyricslens            # mostra
 ```
 
+### Relatar um problema
+
+App aberto pelo menu não tem `stderr` visível, então as falhas vão para um
+arquivo de log. Estes dois respondem quase tudo o que um relato precisa:
+
+```bash
+lyricslens --version
+lyricslens --paths     # onde ficam log, cache e preferências
+```
+
+O log fica em `~/.local/state/lyricslens/`, rotaciona em 1 MiB e guarda um
+arquivo anterior. Falhas em que você pode agir — atalho que o compositor
+recusou, busca de letra que não chegou ao LRCLIB — também aparecem na janela de
+configurações.
+
 ## Como funciona
 
 ```

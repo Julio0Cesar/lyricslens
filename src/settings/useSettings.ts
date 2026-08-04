@@ -7,6 +7,7 @@ import {
   textos,
   traduzirErro,
   type Idioma,
+  type ErroDoBackend,
   type PreferenciaIdioma,
 } from "../i18n";
 
@@ -70,6 +71,12 @@ export function useSettings() {
   // Guardado cru, não traduzido: o idioma pode mudar depois de o erro
   // acontecer, e a frase precisa acompanhar.
   const [erroBruto, setErroBruto] = useState<unknown>(null);
+  // Problema que o backend reportou por conta própria — atalho recusado na
+  // partida, busca de letra que não chegou ao LRCLIB. Vem de duas fontes: o
+  // evento, para quem já está com a janela aberta, e o `last_problem`, para
+  // quem abriu depois. A maioria acontece na partida, quando esta janela
+  // ainda não existe. Ver #14.
+  const [problema, setProblema] = useState<ErroDoBackend | null>(null);
   const pendente = useRef<number | undefined>(undefined);
 
   useEffect(() => {
@@ -78,10 +85,13 @@ export function useSettings() {
     // a janela existir —, então basta ler uma vez.
     invoke<OverlayStatus>("overlay_status").then(setStatus);
     invoke<Idioma>("system_language").then(setIdiomaDoSistema).catch(() => {});
+    invoke<ErroDoBackend | null>("last_problem").then(setProblema).catch(() => {});
 
     const un = listen<Settings>("settings", ({ payload }) => setSettings(payload));
+    const unProblema = listen<ErroDoBackend>("problema", ({ payload }) => setProblema(payload));
     return () => {
       un.then((f) => f());
+      unProblema.then((f) => f());
       window.clearTimeout(pendente.current);
     };
   }, []);
@@ -117,8 +127,19 @@ export function useSettings() {
   return {
     settings,
     status,
-    /** Já traduzido para o idioma da vez. */
-    erro: erroBruto === null ? null : traduzirErro(t, erroBruto),
+    /**
+     * Já traduzido para o idioma da vez.
+     *
+     * A recusa de uma gravação vem primeiro: ela é resposta a algo que o
+     * usuário acabou de fazer, e um problema antigo por cima disso esconderia
+     * o retorno da ação dele.
+     */
+    erro:
+      erroBruto !== null
+        ? traduzirErro(t, erroBruto)
+        : problema !== null
+          ? traduzirErro(t, problema)
+          : null,
     update,
     idioma,
     t,

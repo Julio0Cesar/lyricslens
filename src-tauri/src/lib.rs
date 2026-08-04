@@ -1,4 +1,5 @@
 mod i18n;
+mod log;
 mod lyrics;
 mod media;
 mod overlay;
@@ -10,6 +11,7 @@ mod update;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
+use log::logar;
 use lyrics::{lrclib::LrcLib, Candidate, Lyrics, LyricsProvider};
 use media::{MediaEvent, MediaProvider, PlatformProvider, PlaybackState, Track};
 use overlay::Geometry;
@@ -53,6 +55,32 @@ struct AppState {
     /// opção aparecia ligada nas configurações enquanto na prática não estava
     /// em uso, sem nenhuma indicação.
     layer_shell_fallback: Mutex<Option<String>>,
+    /// O último problema que o usuário pode resolver.
+    ///
+    /// Guardado, e não só emitido, porque a maioria acontece na partida — o
+    /// atalho recusado pelo compositor é o caso típico — e nessa hora a janela
+    /// de configurações não existe para escutar o evento. Sem isto, o erro
+    /// acontece, ninguém vê, e o usuário só percebe que a tecla não faz nada.
+    problema: Mutex<Option<i18n::UiError>>,
+}
+
+/// Registra um problema que o usuário pode resolver: no log, no estado e na
+/// tela de quem estiver escutando.
+///
+/// A contrapartida do princípio da #14 — o que ele *não* pode resolver fica só
+/// no log, e para isso basta o `logar!`.
+fn reportar(app: &AppHandle, alvo: &str, erro: i18n::UiError) {
+    log::escrever(log::Nivel::Erro, alvo, &erro.to_string());
+    let state = app.state::<AppState>();
+    *state.problema.lock().unwrap() = Some(erro.clone());
+    let _ = app.emit("problema", &erro);
+}
+
+/// O último problema por resolver, para a janela de configurações que abriu
+/// depois de ele acontecer.
+#[tauri::command]
+fn last_problem(state: tauri::State<'_, AppState>) -> Option<i18n::UiError> {
+    state.problema.lock().unwrap().clone()
 }
 
 /// Geometria atual do overlay: as preferências, com o modo camada trocado pelo
@@ -143,7 +171,7 @@ fn save_settings(app: AppHandle, mut settings: Settings) -> Result<Settings, i18
         if let Err(e) = overlay::hotkey::apply(&anterior.hotkey, &settings.hotkey) {
             // Gravar um atalho que o compositor recusou deixaria a UI
             // mostrando uma combinação que não funciona.
-            eprintln!("[hotkey] {e}");
+            logar!(Erro, "hotkey", "{e}");
             return Err(e);
         }
     }
@@ -417,7 +445,7 @@ async fn resolve_lyrics(app: AppHandle, track: Track, generation: u64) {
             return;
         }
         Ok(None) => {}
-        Err(e) => eprintln!("[lyrics] cache ilegível: {e}"),
+        Err(e) => logar!(Aviso, "lyrics", "cache ilegível: {e}"),
     }
 
     if !state.cache.should_retry(&key).unwrap_or(true) {
@@ -437,7 +465,7 @@ async fn resolve_lyrics(app: AppHandle, track: Track, generation: u64) {
     match resultado {
         Ok(lyrics) => {
             if let Err(e) = state.cache.put(&track, &lyrics) {
-                eprintln!("[lyrics] falha ao gravar no cache: {e}");
+                logar!(Aviso, "lyrics", "falha ao gravar no cache: {e}");
             }
             emit(LyricsEvent::Found {
                 track_key: key,
@@ -448,13 +476,22 @@ async fn resolve_lyrics(app: AppHandle, track: Track, generation: u64) {
             // Só um "não existe" merece ser lembrado. Falha de rede é
             // temporária e não pode virar ausência permanente.
             if matches!(e, lyrics::LyricsError::NotFound) {
-                eprintln!(
-                    "[lyrics] sem letra para {:?} / {:?} (álbum {:?}, {:?}ms)",
-                    track.artist, track.title, track.album, track.duration_ms
+                logar!(
+                    Info,
+                    "lyrics",
+                    "sem letra para {:?} / {:?} (álbum {:?}, {:?}ms)",
+                    track.artist,
+                    track.title,
+                    track.album,
+                    track.duration_ms
                 );
                 let _ = state.cache.mark_miss(&key);
             } else {
-                eprintln!("[lyrics] busca falhou para {key:?}: {e}");
+                // Rede caída ou tempo limite estourado: o overlay mostra "sem
+                // letra", que é indistinguível de faixa sem letra no LRCLIB.
+                // O usuário merece saber que a diferença existe — é o primeiro
+                // caso invisível listado na #14.
+                reportar(&app, "lyrics", e.into());
             }
             emit(LyricsEvent::NotFound { track_key: key });
         }
@@ -513,6 +550,66 @@ async fn consume(app: AppHandle, mut rx: mpsc::Receiver<MediaEvent>) {
     }
 }
 
+/// O identificador do app, que decide onde o Tauri põe os dados.
+///
+/// Duplicado do `tauri.conf.json` porque estes comandos respondem **antes** de
+/// o app subir — não há `AppHandle` para perguntar. Um teste confere que os
+/// dois não divergiram.
+const IDENTIFICADOR: &str = "com.kintiz.lyricslens";
+
+/// Onde o Tauri guarda dados no Linux: `$XDG_DATA_HOME/<id>`.
+fn diretorio_de_dados() -> Option<std::path::PathBuf> {
+    let base = match std::env::var_os("XDG_DATA_HOME") {
+        Some(v) if !v.is_empty() => std::path::PathBuf::from(v),
+        _ => std::path::PathBuf::from(std::env::var_os("HOME")?)
+            .join(".local")
+            .join("share"),
+    };
+    Some(base.join(IDENTIFICADOR))
+}
+
+/// Comandos que respondem no terminal e **não** sobem a interface.
+///
+/// É a primeira coisa que se pede a quem relata um problema, e hoje não havia
+/// como responder sem ler o código. Ver #14.
+fn cli_de_terminal(argv: &[String]) -> Option<String> {
+    match argv.get(1).map(String::as_str) {
+        Some("--version" | "-V" | "version") => {
+            Some(format!("lyricslens {}", env!("CARGO_PKG_VERSION")))
+        }
+        Some("--paths" | "paths" | "caminhos") => Some(texto_dos_caminhos()),
+        Some("--help" | "-h" | "help") => Some(AJUDA.trim_start().to_string()),
+        _ => None,
+    }
+}
+
+const AJUDA: &str = r#"
+lyricslens — letras sincronizadas sobre qualquer aplicativo
+
+  lyricslens              mostra o overlay
+  lyricslens toggle       mostra ou esconde
+  lyricslens hide         esconde
+  lyricslens settings     abre as configurações
+
+  lyricslens --version    a versão instalada
+  lyricslens --paths      onde ficam log, cache e preferências
+  lyricslens --help       isto aqui
+"#;
+
+fn texto_dos_caminhos() -> String {
+    let ou = |p: Option<std::path::PathBuf>| {
+        p.map(|p| p.display().to_string())
+            .unwrap_or_else(|| "(não descobri — HOME não está definido)".into())
+    };
+    let dados = diretorio_de_dados();
+    format!(
+        "log:          {}\ncache:        {}\npreferências: {}",
+        ou(log::arquivo()),
+        ou(dados.clone().map(|d| d.join("lyrics.db"))),
+        ou(dados.map(|d| d.join("settings.json"))),
+    )
+}
+
 /// Interpreta o que veio na linha de comando.
 ///
 /// É o caminho do atalho global: o Wayland não deixa um app registrar um
@@ -537,6 +634,14 @@ fn handle_cli(app: &AppHandle, argv: &[String]) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Antes de qualquer coisa: estes comandos escrevem no terminal e saem, sem
+    // abrir janela nem acordar a instância que já esteja rodando.
+    let argv: Vec<String> = std::env::args().collect();
+    if let Some(saida) = cli_de_terminal(&argv) {
+        println!("{saida}");
+        return;
+    }
+
     tauri::Builder::default()
         // Precisa ser o primeiro plugin registrado.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
@@ -554,6 +659,7 @@ pub fn run() {
             get_settings,
             save_settings,
             system_language,
+            last_problem,
             open_settings,
             close_settings,
             toggle_overlay,
@@ -596,6 +702,7 @@ pub fn run() {
                 // Assume a preferência; a partida corrige se a camada não subir.
                 layer_shell_active: AtomicBool::new(settings.layer_shell),
                 layer_shell_fallback: Mutex::new(None),
+                problema: Mutex::new(None),
             });
 
             tray::setup(app)?;
@@ -605,7 +712,10 @@ pub fn run() {
             // usuário.
             if !settings.hotkey.is_empty() {
                 if let Err(e) = overlay::hotkey::apply("", &settings.hotkey) {
-                    eprintln!("[hotkey] {e}");
+                    // Atalho recusado é resolvível — trocar a combinação — e
+                    // invisível de outro jeito: a tecla simplesmente não faz
+                    // nada. Ver #14.
+                    reportar(app.handle(), "hotkey", e);
                 }
             }
 
@@ -619,7 +729,11 @@ pub fn run() {
                 // troca mais de tipo de superfície.
                 if geo.layer_shell {
                     if let Err(e) = overlay::layer_shell::init(&window, geo) {
-                        eprintln!("[overlay] camada indisponível, usando janela comum: {e}");
+                        logar!(
+                            Aviso,
+                            "overlay",
+                            "camada indisponível, usando janela comum: {e}"
+                        );
 
                         // Só o estado efetivo muda. A preferência do usuário
                         // fica intacta no settings.json, para a camada voltar
@@ -643,7 +757,7 @@ pub fn run() {
             tauri::async_runtime::spawn(consume(handle, rx));
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = PlatformProvider::new().run(tx).await {
-                    eprintln!("[media] provider parou: {e}");
+                    logar!(Erro, "media", "provider parou: {e}");
                 }
             });
 
@@ -651,4 +765,59 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn argv(args: &[&str]) -> Vec<String> {
+        std::iter::once("lyricslens")
+            .chain(args.iter().copied())
+            .map(String::from)
+            .collect()
+    }
+
+    #[test]
+    fn version_responde_no_terminal() {
+        let saida = cli_de_terminal(&argv(&["--version"])).expect("devia responder");
+        assert!(saida.contains(env!("CARGO_PKG_VERSION")), "saiu: {saida}");
+        assert_eq!(cli_de_terminal(&argv(&["-V"])), Some(saida));
+    }
+
+    #[test]
+    fn paths_lista_os_tres_lugares() {
+        let saida = cli_de_terminal(&argv(&["--paths"])).expect("devia responder");
+        for esperado in ["log:", "cache:", "preferências:"] {
+            assert!(saida.contains(esperado), "faltou {esperado} em:\n{saida}");
+        }
+        assert!(saida.contains("settings.json"));
+        assert!(saida.contains("lyrics.db"));
+    }
+
+    /// Os comandos de janela não podem responder no terminal: eles precisam
+    /// chegar à instância que já está rodando, pelo plugin de instância única.
+    #[test]
+    fn comandos_de_janela_nao_sao_de_terminal() {
+        for comando in ["toggle", "hide", "settings"] {
+            assert_eq!(
+                cli_de_terminal(&argv(&[comando])),
+                None,
+                "{comando} não podia responder no terminal"
+            );
+        }
+        assert_eq!(cli_de_terminal(&argv(&[])), None);
+    }
+
+    /// O identificador está duplicado aqui porque `--paths` responde antes de
+    /// o app subir. Se alguém trocar no `tauri.conf.json` e esquecer daqui, o
+    /// comando passa a apontar para um diretório que não existe — e é
+    /// exatamente na hora de depurar um problema que isso apareceria.
+    #[test]
+    fn o_identificador_nao_divergiu_do_tauri_conf() {
+        let conf = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tauri.conf.json"))
+            .expect("tauri.conf.json ao lado do Cargo.toml");
+        let json: serde_json::Value = serde_json::from_str(&conf).unwrap();
+        assert_eq!(json["identifier"].as_str(), Some(IDENTIFICADOR));
+    }
 }
