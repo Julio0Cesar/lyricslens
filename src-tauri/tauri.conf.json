@@ -64,7 +64,8 @@
     "linux": {
       "deb": {
         "depends": [
-          "libgtk-layer-shell0"
+          "libgtk-layer-shell0",
+          "ca-certificates"
         ]
       },
       "rpm": {
@@ -72,7 +73,8 @@
           "webkit2gtk4.1",
           "gtk3",
           "libayatana-appindicator-gtk3",
-          "gtk-layer-shell"
+          "gtk-layer-shell",
+          "ca-certificates"
         ]
       }
     }

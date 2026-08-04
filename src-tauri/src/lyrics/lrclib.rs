@@ -68,14 +68,29 @@ impl LrcLibTrack {
 }
 
 pub struct LrcLib {
-    http: reqwest::Client,
+    /// `None` quando o cliente não pôde ser montado.
+    ///
+    /// Acontece de verdade: sem `ca-certificates` no sistema, o rustls não
+    /// encontra repositório de certificados e o `build()` falha. Antes isso
+    /// subia como erro do `setup` do Tauri e o app **entrava em pânico na
+    /// partida** — o usuário clicava no ícone e nada acontecia, sem uma linha
+    /// dizendo por quê. Agora o app abre, o overlay funciona, e a busca de
+    /// letra é que reclama. Pego pelo teste de fumaça headless da #33.
+    http: Option<reqwest::Client>,
     /// Onde fica a API. Só o teste troca isto — é o que permite exercitar o
     /// recuo para a busca ampla contra um servidor local em vez da rede.
     base: String,
 }
 
 impl LrcLib {
-    pub fn new() -> Result<Self, LyricsError> {
+    pub fn new() -> Self {
+        Self {
+            http: Self::montar_cliente(),
+            base: BASE.into(),
+        }
+    }
+
+    fn montar_cliente() -> Option<reqwest::Client> {
         let http = reqwest::Client::builder()
             .user_agent(USER_AGENT)
             // O LRCLIB responde em ~400ms no caso comum, mas leva bem mais
@@ -98,19 +113,26 @@ impl LrcLib {
             // o hyper abre conexão nova e o custo é o de hoje — não há como
             // este número ser alto demais, só baixo demais.
             .pool_idle_timeout(std::time::Duration::from_secs(600))
-            .build()
-            .map_err(|e| LyricsError::Network(e.to_string()))?;
-        Ok(Self {
-            http,
-            base: BASE.into(),
-        })
+            .build();
+
+        match http {
+            Ok(c) => Some(c),
+            Err(e) => {
+                crate::log::escrever(
+                    crate::log::Nivel::Erro,
+                    "lyrics",
+                    &format!("cliente HTTP indisponível — busca de letra desligada: {e}"),
+                );
+                None
+            }
+        }
     }
 
     /// O cliente HTTP, para outro provedor reaproveitar o mesmo pool.
     ///
     /// `reqwest::Client` é barato de clonar e compartilha o pool de conexões —
     /// e o pool é justamente o que a #4 mostrou importar.
-    pub fn http(&self) -> reqwest::Client {
+    pub fn http(&self) -> Option<reqwest::Client> {
         self.http.clone()
     }
 
@@ -118,10 +140,12 @@ impl LrcLib {
     #[cfg(test)]
     fn com_base(base: impl Into<String>) -> Self {
         Self {
-            http: reqwest::Client::builder()
-                .user_agent(USER_AGENT)
-                .build()
-                .expect("cliente de teste"),
+            http: Some(
+                reqwest::Client::builder()
+                    .user_agent(USER_AGENT)
+                    .build()
+                    .expect("cliente de teste"),
+            ),
             base: base.into(),
         }
     }
@@ -131,8 +155,13 @@ impl LrcLib {
         url: &str,
         params: &[(&str, String)],
     ) -> Result<T, LyricsError> {
-        let resp = self
-            .http
+        let http = self.http.as_ref().ok_or_else(|| {
+            LyricsError::Network(
+                "sem repositório de certificados no sistema (instale ca-certificates)".into(),
+            )
+        })?;
+
+        let resp = http
             .get(url)
             .query(params)
             .send()
