@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.8.0...v0.9.0) (2026-08-04)
+
+
+### Funcionalidades
+
+* **overlay:** trait Compositor, com Hyprland extraído e Sway novo ([#74](https://github.com/Julio0Cesar/lyricslens/issues/74)) ([82b2fa2](https://github.com/Julio0Cesar/lyricslens/commit/82b2fa2ae00fcb4a50420ecce8157c7b9fc2096d))
+
 ## [0.8.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.7.0...v0.8.0) (2026-08-04)
 
 
