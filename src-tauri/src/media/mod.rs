@@ -6,6 +6,8 @@
 
 #[cfg(target_os = "linux")]
 pub mod mpris;
+#[cfg(test)]
+pub mod player_falso;
 
 use serde::Serialize;
 use tokio::sync::mpsc;

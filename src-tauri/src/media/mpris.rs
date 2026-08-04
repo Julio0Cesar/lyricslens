@@ -410,3 +410,214 @@ mod tests {
         assert_eq!(as_micros_to_ms(&zero), None);
     }
 }
+
+/// O laço de detecção contra um player de mentira no barramento.
+///
+/// Estes testes **pulam** quando há outro player MPRIS na sessão: o provedor
+/// escolhe um só, e um Spotify de verdade ganharia do falso. Reprovar por causa
+/// do que o desenvolvedor tem aberto ensinaria a ignorar a suíte. No CI o
+/// `dbus-run-session` garante o barramento limpo. Ver #9.
+#[cfg(test)]
+mod contra_player_falso {
+    use super::super::player_falso::{barramento_ocupado, Estado, PlayerNoBarramento};
+    use super::*;
+    use crate::media::MediaProvider;
+
+    const NOSSO: &str = "lyricslensteste";
+
+    /// Estes testes precisam do barramento só para si.
+    ///
+    /// O provedor escolhe **um** player. Rodando em paralelo, o player falso de
+    /// um teste aparece para o provedor do outro, e quem ganha depende de quem
+    /// subiu primeiro — dois deles falhavam assim, de forma intermitente. A vez
+    /// resolve o cruzamento; o nome próprio por teste evita a briga pelo mesmo
+    /// nome no barramento, que o D-Bus só concede a um dono.
+    async fn vez() -> tokio::sync::MutexGuard<'static, ()> {
+        static VEZ: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
+        VEZ.get_or_init(Default::default).lock().await
+    }
+
+    /// `Some(motivo)` quando não dá para confiar no resultado.
+    async fn pular() -> Option<String> {
+        if Connection::session().await.is_err() {
+            return Some("sem barramento de sessão".into());
+        }
+        barramento_ocupado(NOSSO).await.map(|outros| {
+            format!("outros players no barramento ({outros:?}) — rode sob `dbus-run-session -- cargo test`")
+        })
+    }
+
+    macro_rules! ou_pula {
+        () => {
+            let _vez = vez().await;
+            if let Some(motivo) = pular().await {
+                eprintln!("pulando: {motivo}");
+                return;
+            }
+        };
+    }
+
+    /// Junta eventos até achar o que se procura, ou desistir.
+    async fn esperar<F>(rx: &mut mpsc::Receiver<MediaEvent>, quero: F) -> Option<MediaEvent>
+    where
+        F: Fn(&MediaEvent) -> bool,
+    {
+        let prazo = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let resta = prazo.saturating_duration_since(tokio::time::Instant::now());
+            if resta.is_zero() {
+                return None;
+            }
+            match tokio::time::timeout(resta, rx.recv()).await {
+                Ok(Some(ev)) if quero(&ev) => return Some(ev),
+                Ok(Some(_)) => continue,
+                _ => return None,
+            }
+        }
+    }
+
+    fn subir_provedor() -> (mpsc::Receiver<MediaEvent>, tokio::task::JoinHandle<()>) {
+        let (tx, rx) = mpsc::channel(64);
+        let tarefa = tokio::spawn(async move {
+            let _ = MprisProvider::new().run(tx).await;
+        });
+        (rx, tarefa)
+    }
+
+    #[tokio::test]
+    async fn detecta_a_faixa_que_esta_tocando() {
+        ou_pula!();
+        let _player = PlayerNoBarramento::publicar(&format!("{NOSSO}detecta"), Estado::default())
+            .await
+            .expect("publicar no barramento");
+        let (mut rx, tarefa) = subir_provedor();
+
+        let ev = esperar(&mut rx, |e| matches!(e, MediaEvent::TrackChanged { .. }))
+            .await
+            .expect("nenhum TrackChanged em 5s");
+
+        let MediaEvent::TrackChanged { track } = ev else {
+            unreachable!()
+        };
+        assert_eq!(track.title, "Creep");
+        assert_eq!(track.artist, "Radiohead");
+        assert_eq!(track.album, "Pablo Honey");
+        assert_eq!(track.duration_ms, Some(238_000));
+        // O nome da fonte sai do nome no barramento, sem o prefixo MPRIS.
+        assert_eq!(track.source, format!("{NOSSO}detecta"));
+
+        tarefa.abort();
+    }
+
+    #[tokio::test]
+    async fn troca_de_faixa_vira_evento_novo() {
+        ou_pula!();
+        let player = PlayerNoBarramento::publicar(&format!("{NOSSO}troca"), Estado::default())
+            .await
+            .expect("publicar");
+        let (mut rx, tarefa) = subir_provedor();
+
+        esperar(&mut rx, |e| matches!(e, MediaEvent::TrackChanged { .. }))
+            .await
+            .expect("a primeira faixa");
+
+        player
+            .mexer(|e| {
+                e.titulo = "Karma Police".into();
+                e.album = "OK Computer".into();
+                e.duracao_us = 261_000_000;
+            })
+            .await
+            .expect("avisar o barramento");
+
+        let ev = esperar(
+            &mut rx,
+            |e| matches!(e, MediaEvent::TrackChanged { track } if track.title == "Karma Police"),
+        )
+        .await
+        .expect("a faixa nova");
+
+        let MediaEvent::TrackChanged { track } = ev else {
+            unreachable!()
+        };
+        assert_eq!(track.duration_ms, Some(261_000));
+
+        tarefa.abort();
+    }
+
+    #[tokio::test]
+    async fn pausa_vira_mudanca_de_estado() {
+        ou_pula!();
+        let player = PlayerNoBarramento::publicar(&format!("{NOSSO}pausa"), Estado::default())
+            .await
+            .expect("publicar");
+        let (mut rx, tarefa) = subir_provedor();
+
+        esperar(&mut rx, |e| matches!(e, MediaEvent::TrackChanged { .. }))
+            .await
+            .expect("a faixa");
+
+        player
+            .mexer(|e| e.status = "Paused".into())
+            .await
+            .expect("avisar o barramento");
+
+        let ev = esperar(&mut rx, |e| {
+            matches!(
+                e,
+                MediaEvent::PlaybackChanged {
+                    state: PlaybackState::Paused
+                }
+            )
+        })
+        .await;
+        assert!(ev.is_some(), "a pausa não chegou");
+
+        tarefa.abort();
+    }
+
+    /// A posição avançando normalmente é âncora; um pulo é `Seeked`. A
+    /// diferença importa: o relógio da UI extrapola entre âncoras, e tratar um
+    /// salto como âncora comum deixaria a letra andando errada até a próxima.
+    #[tokio::test]
+    async fn salto_na_posicao_vira_seeked() {
+        ou_pula!();
+        let player = PlayerNoBarramento::publicar(&format!("{NOSSO}salto"), Estado::default())
+            .await
+            .expect("publicar");
+        let (mut rx, tarefa) = subir_provedor();
+
+        esperar(&mut rx, |e| {
+            matches!(e, MediaEvent::PositionAnchored { .. })
+        })
+        .await
+        .expect("a primeira âncora");
+
+        // Pulo de dois minutos: nenhuma reprodução normal anda isso em 100ms.
+        player
+            .mexer(|e| e.posicao_us = 120_000_000)
+            .await
+            .expect("avisar o barramento");
+
+        let ev = esperar(&mut rx, |e| matches!(e, MediaEvent::Seeked { .. })).await;
+        assert!(ev.is_some(), "o salto não virou Seeked");
+
+        tarefa.abort();
+    }
+
+    /// Sem player nenhum, o provedor não pode inventar faixa.
+    #[tokio::test]
+    async fn sem_player_nao_emite_faixa() {
+        ou_pula!();
+        let (mut rx, tarefa) = subir_provedor();
+
+        let ev = tokio::time::timeout(Duration::from_secs(2), rx.recv()).await;
+        match ev {
+            Err(_) => {}
+            Ok(Some(MediaEvent::Gone)) | Ok(None) => {}
+            Ok(Some(outro)) => panic!("inventou um evento sem player: {outro:?}"),
+        }
+
+        tarefa.abort();
+    }
+}

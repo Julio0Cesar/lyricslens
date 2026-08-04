@@ -68,6 +68,11 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --all-targets -- -D warnings
 
+      # `dbus-run-session` sobe um barramento privado só para esta execução. Os
+      # testes do provedor MPRIS precisam estar sozinhos no barramento — o
+      # provedor escolhe **um** player, e qualquer outro na sessão ganharia do
+      # falso. Sem isso eles se pulam sozinhos e a cobertura evapora em
+      # silêncio, que é pior que falhar. Ver #9.
       - name: Testes
         working-directory: src-tauri
-        run: cargo test
+        run: dbus-run-session -- cargo test
