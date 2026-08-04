@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/Julio0Cesar/lyricslens/compare/v0.10.0...v0.10.1) (2026-08-04)
+
+
+### Correções
+
+* **rede:** não entrar em pânico quando o sistema não tem certificados ([#79](https://github.com/Julio0Cesar/lyricslens/issues/79)) ([a0c3446](https://github.com/Julio0Cesar/lyricslens/commit/a0c3446c56c96c80af85b8dbb9b2449ece2edefc))
+
 ## [0.10.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.9.0...v0.10.0) (2026-08-04)
 
 
