@@ -80,6 +80,21 @@ impl LrcLib {
             // pontuação incomum e álbum vazio. Um limite curto transformava
             // isso em "falha de rede" e a letra nunca aparecia.
             .timeout(std::time::Duration::from_secs(25))
+            // Toda busca pagava DNS+TCP+TLS de novo, e o culpado não era o
+            // servidor: o padrão do reqwest é descartar conexão ociosa em 90s,
+            // e música dura 3-4 minutos. A conexão morria entre uma faixa e a
+            // seguinte, sempre, por decisão nossa.
+            //
+            // Medido contra o LRCLIB real, com o expiry do cliente fora do
+            // caminho: a conexão sobrevive ociosa a 60s, 120s, 180s, 240s e
+            // 300s — mais que uma música. Confirmado por dois sinais
+            // independentes: o cliente não abre TCP novo, e a requisição cai de
+            // ~300ms para ~240ms, que é exatamente o handshake economizado.
+            //
+            // 600s é generoso de propósito. Se o servidor tiver fechado antes,
+            // o hyper abre conexão nova e o custo é o de hoje — não há como
+            // este número ser alto demais, só baixo demais.
+            .pool_idle_timeout(std::time::Duration::from_secs(600))
             .build()
             .map_err(|e| LyricsError::Network(e.to_string()))?;
         Ok(Self { http })
