@@ -55,7 +55,8 @@ package half-installed.
 ### Arch, NixOS, or no sudo
 
 The script installs into `~/.local` and touches nothing outside your home
-directory:
+directory. It picks the smaller download when it can: **8MB** if WebKit and GTK
+are already on your system, **82MB** (self-contained) if they are not.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Julio0Cesar/lyricslens/main/install.sh | sh

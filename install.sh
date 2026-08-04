@@ -64,9 +64,62 @@ trap 'rm -rf "$TMP"' EXIT
 
 BASE="https://github.com/$REPO/releases/latest/download"
 
-info "baixando a última versão"
-curl -fsSL "$BASE/$NOME-x86_64.AppImage" -o "$TMP/app.AppImage" \
-  || erro "não consegui baixar o pacote — confira se já existe uma release em https://github.com/$REPO/releases"
+# --- escolher o formato ------------------------------------------------------
+#
+# O AppImage traz WebKit e GTK dentro: 82MB, contra 8MB do tarball. Medido no
+# pacote da v0.6.0, WebKit e JavaScriptCore sozinhos são 119MB dos 265MB
+# extraídos — não há como o AppImage ser pequeno.
+#
+# Quem já tem essas bibliotecas (a maioria dos desktops) não precisa baixá-las
+# de novo. Quem não tem continua com um caminho que funciona sem instalar nada.
+# Ver #8.
+
+tem_no_sistema() {
+  command -v ldconfig >/dev/null 2>&1 || return 1
+  cache="$(ldconfig -p 2>/dev/null)" || return 1
+  for lib in libwebkit2gtk-4.1 libgtk-3 libayatana-appindicator3 libgtk-layer-shell; do
+    case "$cache" in
+      *"$lib"*) ;;
+      *) return 1 ;;
+    esac
+  done
+  return 0
+}
+
+if [ -n "${LYRICSLENS_FORMATO:-}" ]; then
+  FORMATO="$LYRICSLENS_FORMATO"
+elif tem_no_sistema; then
+  FORMATO=tarball
+else
+  FORMATO=appimage
+fi
+
+# --- baixar o pacote ---------------------------------------------------------
+
+if [ "$FORMATO" = tarball ]; then
+  PACOTE="$NOME-x86_64.tar.gz"
+  info "baixando a última versão (8MB — as bibliotecas já estão no seu sistema)"
+else
+  PACOTE="$NOME-x86_64.AppImage"
+  info "baixando a última versão (82MB — o pacote traz o WebKit e o GTK dentro,"
+  info "porque não encontrei os do sistema)"
+fi
+
+if ! curl -fsSL "$BASE/$PACOTE" -o "$TMP/pacote"; then
+  # Releases anteriores à v0.7.0 não publicam o tarball. Sem esta queda, quem
+  # rodasse o script novo contra uma release velha tomaria 404 e não instalaria
+  # nada — e o script é buscado sempre do `main`, então isso aconteceria com
+  # todo mundo até a release seguinte sair.
+  if [ "$FORMATO" = tarball ]; then
+    info "esta release não publica o tarball — usando o AppImage"
+    FORMATO=appimage
+    PACOTE="$NOME-x86_64.AppImage"
+    curl -fsSL "$BASE/$PACOTE" -o "$TMP/pacote" \
+      || erro "não consegui baixar o pacote — confira se já existe uma release em https://github.com/$REPO/releases"
+  else
+    erro "não consegui baixar o pacote — confira se já existe uma release em https://github.com/$REPO/releases"
+  fi
+fi
 curl -fsSL "$BASE/$NOME.png" -o "$TMP/icone.png" || erro "não consegui baixar o ícone"
 
 # --- conferir a integridade -------------------------------------------------
@@ -84,12 +137,12 @@ soma() {
 }
 
 if curl -fsSL "$BASE/SHA256SUMS" -o "$TMP/SHA256SUMS" 2>/dev/null; then
-  esperado="$(grep " $NOME-x86_64.AppImage\$" "$TMP/SHA256SUMS" | cut -d' ' -f1)"
-  obtido="$(soma "$TMP/app.AppImage")"
+  esperado="$(grep " $PACOTE\$" "$TMP/SHA256SUMS" | cut -d' ' -f1)"
+  obtido="$(soma "$TMP/pacote")"
   if [ -z "$obtido" ]; then
     info "sem sha256sum nem shasum — pulando a conferência de integridade"
   elif [ -z "$esperado" ]; then
-    info "o SHA256SUMS não lista o AppImage — pulando a conferência"
+    info "o SHA256SUMS não lista $PACOTE — pulando a conferência"
   elif [ "$esperado" != "$obtido" ]; then
     erro "o pacote baixado não confere com o checksum publicado
   esperado: $esperado
@@ -103,16 +156,26 @@ else
   info "esta release não publica checksums — pulando a conferência"
 fi
 
-chmod +x "$TMP/app.AppImage"
-
 # --- extrair ----------------------------------------------------------------
 #
 # O AppImage é executado extraído, e não montado: montar exige libfuse2, que
 # várias distribuições já não instalam por padrão. Extrair funciona em todas.
 
 info "extraindo"
-( cd "$TMP" && ./app.AppImage --appimage-extract >/dev/null 2>&1 ) \
-  || erro "não consegui extrair o pacote"
+if [ "$FORMATO" = tarball ]; then
+  mkdir -p "$TMP/conteudo"
+  tar -xzf "$TMP/pacote" -C "$TMP/conteudo" --strip-components=1 \
+    || erro "não consegui extrair o pacote"
+  EXECUTAVEL="bin/$NOME"
+  ICONES_NO_PACOTE="share/icons/hicolor"
+else
+  chmod +x "$TMP/pacote"
+  ( cd "$TMP" && ./pacote --appimage-extract >/dev/null 2>&1 ) \
+    || erro "não consegui extrair o pacote"
+  mv "$TMP/squashfs-root" "$TMP/conteudo"
+  EXECUTAVEL="AppRun"
+  ICONES_NO_PACOTE="usr/share/icons/hicolor"
+fi
 
 # O AppRun põe o `usr/lib/` do pacote na frente do LD_LIBRARY_PATH, então toda
 # biblioteca empacotada sequestra a do sistema. Para a maioria isso é o que se
@@ -123,7 +186,7 @@ info "extraindo"
 #
 # A partir da v0.2.2 o workflow de release já não as empacota; esta limpeza
 # cobre quem instalar uma release anterior. Ver #30.
-rm -f "$TMP"/squashfs-root/usr/lib/libwayland-*
+rm -f "$TMP"/conteudo/usr/lib/libwayland-*
 
 # A troca é feita de lado e só então movida para o lugar. Apagar o destino
 # antes de copiar deixaria a instalação inexistente por alguns segundos — e se
@@ -134,7 +197,7 @@ ANTIGO="$DESTINO.antigo"
 
 rm -rf "$NOVO" "$ANTIGO"
 mkdir -p "$NOVO"
-cp -a "$TMP/squashfs-root/." "$NOVO/"
+cp -a "$TMP/conteudo/." "$NOVO/"
 
 if [ -d "$DESTINO" ]; then
   mv "$DESTINO" "$ANTIGO"
@@ -151,7 +214,7 @@ mkdir -p "$BIN" "$ATALHOS"
 # chama o caminho real, então o AppRun encontra os próprios arquivos.
 cat > "$BIN/$NOME" <<EOF
 #!/bin/sh
-exec "$DESTINO/AppRun" "\$@"
+exec "$DESTINO/$EXECUTAVEL" "\$@"
 EOF
 chmod +x "$BIN/$NOME"
 
@@ -159,9 +222,9 @@ for tamanho in 32 64 128 256; do
   mkdir -p "$ICONES/${tamanho}x${tamanho}/apps"
 done
 install -m 644 "$TMP/icone.png" "$ICONES/128x128/apps/$NOME.png"
-# O AppImage já traz os outros tamanhos; aproveita os que existirem.
+# O pacote já traz os outros tamanhos; aproveita os que existirem.
 for tamanho in 32 64 256; do
-  origem="$DESTINO/usr/share/icons/hicolor/${tamanho}x${tamanho}/apps/$NOME.png"
+  origem="$DESTINO/$ICONES_NO_PACOTE/${tamanho}x${tamanho}/apps/$NOME.png"
   [ -f "$origem" ] && install -m 644 "$origem" "$ICONES/${tamanho}x${tamanho}/apps/$NOME.png"
 done
 
