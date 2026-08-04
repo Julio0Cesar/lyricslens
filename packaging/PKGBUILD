@@ -13,7 +13,7 @@
 #   git commit -am "$(grep -m1 ^pkgver PKGBUILD | cut -d= -f2)" && git push
 
 pkgname=lyricslens-bin
-pkgver=0.9.0
+pkgver=0.10.0
 pkgrel=1
 pkgdesc="Letras sincronizadas sobre qualquer aplicativo"
 arch=('x86_64')
@@ -28,7 +28,7 @@ options=('!strip')
 
 source=("lyricslens-$pkgver-x86_64.tar.gz::$url/releases/download/v$pkgver/lyricslens-x86_64.tar.gz"
         "lyricslens-$pkgver.png::$url/releases/download/v$pkgver/lyricslens.png")
-sha256sums=('d7231411b26d06e0cd4b5de9b1e138cb4687db24536d10812b92ad40b5fe9204'
+sha256sums=('722e46f7ef36cbf8f54ede0fa9a9ad8e5a19164f065aa3fea137d2084c85237f'
             '5836e78467d9c4873c8d86d2a9ff13ef5e09be1ece1e7729b407b9592c160974')
 
 package() {
