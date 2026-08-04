@@ -62,7 +62,10 @@ printf 'Instalando o LyricsLens…\n\n'
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-BASE="https://github.com/$REPO/releases/latest/download"
+# A origem é configurável para o teste de fumaça poder apontar o script para os
+# artefatos da release que está sendo construída, em vez da última publicada —
+# testar contra a release anterior não diria nada sobre esta. Ver #33.
+BASE="${LYRICSLENS_BASE:-https://github.com/$REPO/releases/latest/download}"
 
 # --- escolher o formato ------------------------------------------------------
 #
