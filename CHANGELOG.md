@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.5.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.4.0...v0.5.0) (2026-08-04)
+
+
+### Funcionalidades
+
+* **i18n:** interface em inglês, seguindo o idioma do sistema ([#62](https://github.com/Julio0Cesar/lyricslens/issues/62)) ([420f5ce](https://github.com/Julio0Cesar/lyricslens/commit/420f5ce597d8ee29b7a5ad3e48ce8dbb4ed95664))
+
+
+### Correções
+
+* **overlay:** altura padrão dimensionada para o que o overlay mostra ([#47](https://github.com/Julio0Cesar/lyricslens/issues/47)) ([5d70f72](https://github.com/Julio0Cesar/lyricslens/commit/5d70f72b274fd96412059a4e5efd91972b7dab8b))
+* **pacotes:** declarar gtk-layer-shell e só publicar release com pacotes ([#46](https://github.com/Julio0Cesar/lyricslens/issues/46)) ([34e89bd](https://github.com/Julio0Cesar/lyricslens/commit/34e89bd0743a32c46f22b385669f06f13fef5ddc))
+* **release:** parar o loop de releases e pôr o portão antes da publicação ([#59](https://github.com/Julio0Cesar/lyricslens/issues/59)) ([0d20517](https://github.com/Julio0Cesar/lyricslens/commit/0d20517c84113c671fe355a12fa1cdd9c0aa3b7f))
+
+
+### Desempenho
+
+* **ci:** enxugar e instrumentar o teste de fumaça do .deb ([#60](https://github.com/Julio0Cesar/lyricslens/issues/60)) ([1b945dd](https://github.com/Julio0Cesar/lyricslens/commit/1b945dde12bb86f36a540dd3677dae4c383b9e77))
+* **lrclib:** reaproveitar a conexão entre faixas em vez de pré-aquecer ([#61](https://github.com/Julio0Cesar/lyricslens/issues/61)) ([997d7a1](https://github.com/Julio0Cesar/lyricslens/commit/997d7a1494bc7b331fe9cc854ff610b3aeabf307))
+
 ## [0.4.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.3.0...v0.4.0) (2026-08-03)
 
 
