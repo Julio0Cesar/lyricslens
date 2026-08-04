@@ -21,7 +21,7 @@ url="https://github.com/Julio0Cesar/lyricslens"
 license=('MIT')
 # O tarball não traz biblioteca nenhuma — é o ponto dele. Estas são as mesmas
 # que o .deb e o .rpm declaram.
-depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator' 'gtk-layer-shell')
+depends=('webkit2gtk-4.1' 'gtk3' 'libayatana-appindicator' 'gtk-layer-shell' 'ca-certificates')
 provides=('lyricslens')
 conflicts=('lyricslens')
 options=('!strip')

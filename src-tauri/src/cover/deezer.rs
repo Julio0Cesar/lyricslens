@@ -58,12 +58,13 @@ impl Album {
 }
 
 pub struct Deezer {
-    http: reqwest::Client,
+    /// `None` pelo mesmo motivo do `LrcLib`: sem certificados não há cliente.
+    http: Option<reqwest::Client>,
     base: String,
 }
 
 impl Deezer {
-    pub fn new(http: reqwest::Client) -> Self {
+    pub fn new(http: Option<reqwest::Client>) -> Self {
         Self {
             http,
             base: BASE.into(),
@@ -73,7 +74,7 @@ impl Deezer {
     #[cfg(test)]
     fn com_base(http: reqwest::Client, base: impl Into<String>) -> Self {
         Self {
-            http,
+            http: Some(http),
             base: base.into(),
         }
     }
@@ -104,8 +105,13 @@ impl CoverProvider for Deezer {
             return Ok(None);
         }
 
-        let busca: Busca = self
-            .http
+        // Sem cliente não há capa — e isso não merece erro na tela, porque a
+        // busca de letra já reclamou pelo mesmo motivo.
+        let Some(http) = self.http.as_ref() else {
+            return Ok(None);
+        };
+
+        let busca: Busca = http
             .get(format!("{}/search/album", self.base))
             .query(&[("q", format!("{artist} {album}")), ("limit", "10".into())])
             .send()

@@ -778,7 +778,7 @@ pub fn run() {
             let mut now_playing = NowPlaying::default();
             now_playing.clock.set_offset_ms(settings.sync_offset_ms);
 
-            let provider = LrcLib::new()?;
+            let provider = LrcLib::new();
             // O mesmo cliente serve os dois: `reqwest::Client` compartilha o
             // pool de conexões, e o pool é o que a #4 mostrou importar.
             let capas = cover::deezer::Deezer::new(provider.http());
