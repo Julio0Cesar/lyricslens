@@ -55,7 +55,9 @@ dependencies* e deixam o pacote meio-instalado.
 
 ### Arch, NixOS, ou sem sudo
 
-O script instala em `~/.local`, sem tocar em nada fora da sua pasta:
+O script instala em `~/.local`, sem tocar em nada fora da sua pasta. Ele escolhe
+o download menor quando dá: **8MB** se o WebKit e o GTK já estiverem no seu
+sistema, **82MB** (autossuficiente) se não estiverem.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Julio0Cesar/lyricslens/main/install.sh | sh

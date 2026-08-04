@@ -132,6 +132,30 @@ jobs:
           cp "$bundle"/rpm/*.rpm          dist-release/lyricslens-x86_64.rpm
           # O instalador precisa do ícone para registrar o app no menu.
           cp src-tauri/icons/128x128.png  dist-release/lyricslens.png
+
+          # Tarball leve: o binário e os recursos, sem biblioteca nenhuma.
+          #
+          # Medido no AppImage da v0.6.0 (82MB comprimido, 265MB extraído):
+          # WebKit e JavaScriptCore respondem por 119MB, o ICU por 29MB, o
+          # librsvg por 11MB. O GStreamer — que a #8 suspeitava ser o peso —
+          # são 4,5MB, 1,7% do total. Não há o que enxugar: quem pesa é o
+          # WebKit, e a única forma de não pagá-lo é não empacotá-lo.
+          #
+          # Sai do payload do .deb para não divergir do que ele instala.
+          arvore=$(mktemp -d)
+          dpkg-deb -x "$bundle"/deb/*.deb "$arvore/payload"
+          mkdir -p "$arvore/lyricslens/bin"
+          cp "$arvore/payload/usr/bin/lyricslens" "$arvore/lyricslens/bin/"
+          cp -r "$arvore/payload/usr/share" "$arvore/lyricslens/share"
+          tar -C "$arvore" -czf dist-release/lyricslens-x86_64.tar.gz lyricslens
+          echo "tarball: $(du -h dist-release/lyricslens-x86_64.tar.gz | cut -f1)"
+          # O ponto do tarball é não levar biblioteca. Se uma entrar, ele deixa
+          # de ser leve sem ninguém perceber — o número só apareceria no log.
+          if tar -tzf dist-release/lyricslens-x86_64.tar.gz | grep -qE '\.so(\.|$)'; then
+            echo "::error::o tarball levou biblioteca junto — ele existe justamente para não levar"
+            tar -tzf dist-release/lyricslens-x86_64.tar.gz | grep -E '\.so(\.|$)'
+            exit 1
+          fi
           # O install.sh confere este arquivo antes de extrair o pacote (#29).
           ( cd dist-release && sha256sum ./* > SHA256SUMS && sed -i 's|\./||' SHA256SUMS )
           ls -la dist-release
