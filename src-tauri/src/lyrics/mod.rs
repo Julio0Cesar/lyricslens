@@ -3,6 +3,8 @@
 pub mod lrc;
 pub mod lrclib;
 pub mod normalize;
+#[cfg(test)]
+pub mod servidor_falso;
 
 use serde::{Deserialize, Serialize};
 

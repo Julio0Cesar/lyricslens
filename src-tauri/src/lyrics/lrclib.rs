@@ -69,6 +69,9 @@ impl LrcLibTrack {
 
 pub struct LrcLib {
     http: reqwest::Client,
+    /// Onde fica a API. Só o teste troca isto — é o que permite exercitar o
+    /// recuo para a busca ampla contra um servidor local em vez da rede.
+    base: String,
 }
 
 impl LrcLib {
@@ -97,7 +100,22 @@ impl LrcLib {
             .pool_idle_timeout(std::time::Duration::from_secs(600))
             .build()
             .map_err(|e| LyricsError::Network(e.to_string()))?;
-        Ok(Self { http })
+        Ok(Self {
+            http,
+            base: BASE.into(),
+        })
+    }
+
+    /// O mesmo cliente, apontando para outro lugar.
+    #[cfg(test)]
+    fn com_base(base: impl Into<String>) -> Self {
+        Self {
+            http: reqwest::Client::builder()
+                .user_agent(USER_AGENT)
+                .build()
+                .expect("cliente de teste"),
+            base: base.into(),
+        }
     }
 
     async fn get_json<T: serde::de::DeserializeOwned>(
@@ -170,7 +188,9 @@ impl LrcLib {
             params.push(("duration", (ms / 1000).to_string()));
         }
 
-        let found: LrcLibTrack = self.get_json(&format!("{BASE}/get"), &params).await?;
+        let found: LrcLibTrack = self
+            .get_json(&format!("{}/get", self.base), &params)
+            .await?;
         let lyrics = found.into_lyrics();
 
         if lyrics.is_empty() {
@@ -203,12 +223,16 @@ impl LyricsProvider for LrcLib {
         let q = super::normalize::preparar(artist, title);
         let params = vec![("artist_name", q.artist), ("track_name", q.title)];
 
-        let achados: Vec<LrcLibTrack> = self.get_json(&format!("{BASE}/search"), &params).await?;
+        let achados: Vec<LrcLibTrack> = self
+            .get_json(&format!("{}/search", self.base), &params)
+            .await?;
         Ok(achados.into_iter().map(|t| t.into_candidate()).collect())
     }
 
     async fn fetch_by_id(&self, id: &str) -> Result<Lyrics, LyricsError> {
-        let found: LrcLibTrack = self.get_json(&format!("{BASE}/get/{id}"), &[]).await?;
+        let found: LrcLibTrack = self
+            .get_json(&format!("{}/get/{id}", self.base), &[])
+            .await?;
         let lyrics = found.into_lyrics();
         if lyrics.is_empty() {
             return Err(LyricsError::NotFound);
@@ -327,5 +351,232 @@ mod tests {
     #[test]
     fn lista_vazia_nao_escolhe_nada() {
         assert!(escolher(&[], Some(237_000)).is_none());
+    }
+}
+
+/// O cliente contra um LRCLIB de mentira.
+///
+/// O que se testa aqui não é o HTTP — é a decisão: quando recuar para a busca
+/// ampla, qual candidato escolher, e quando **não** recuar. A #9 pede isto
+/// justamente porque nada disso é alcançável sem um servidor no meio.
+#[cfg(test)]
+mod contra_servidor {
+    use std::collections::HashMap;
+
+    use super::super::servidor_falso::{faixa_json, Resposta, ServidorFalso};
+    use super::*;
+
+    fn faixa(duracao_ms: Option<u64>) -> Track {
+        Track {
+            title: "Creep".into(),
+            artist: "Radiohead".into(),
+            album: "Pablo Honey".into(),
+            duration_ms: duracao_ms,
+            art_url: None,
+            url: None,
+            source: "spotify".into(),
+        }
+    }
+
+    async fn servidor(rotas: Vec<(&'static str, Resposta)>) -> ServidorFalso {
+        ServidorFalso::subir(rotas.into_iter().collect::<HashMap<_, _>>()).await
+    }
+
+    #[tokio::test]
+    async fn a_busca_exata_resolve_e_nao_recua() {
+        let s = servidor(vec![(
+            "/api/get",
+            Resposta::json(faixa_json(496, "Creep", 239.0, true).to_string()),
+        )])
+        .await;
+
+        let letra = LrcLib::com_base(&s.base)
+            .fetch(&faixa(Some(239_000)))
+            .await
+            .expect("devia achar");
+
+        assert_eq!(letra.lines.len(), 1);
+        assert!(
+            !s.pediu("/api/search"),
+            "recuou para a busca ampla sem precisar: {:?}",
+            s.pedidos()
+        );
+    }
+
+    /// O caso que a busca ampla existe para resolver: o `/api/get` casa por
+    /// assinatura completa, e basta o álbum vir escrito diferente para virar
+    /// 404 mesmo existindo a letra.
+    #[tokio::test]
+    async fn recua_para_a_busca_ampla_quando_a_exata_da_404() {
+        let s = servidor(vec![
+            (
+                "/api/get/496",
+                Resposta::json(faixa_json(496, "Creep", 239.0, true).to_string()),
+            ),
+            ("/api/get", Resposta::status(404)),
+            (
+                "/api/search",
+                Resposta::json(
+                    serde_json::json!([faixa_json(496, "Creep", 239.0, true)]).to_string(),
+                ),
+            ),
+        ])
+        .await;
+
+        let letra = LrcLib::com_base(&s.base)
+            .fetch(&faixa(Some(239_000)))
+            .await
+            .expect("a busca ampla devia salvar");
+
+        assert_eq!(letra.lines.len(), 1);
+        assert!(
+            s.pediu("/api/search"),
+            "não chegou a buscar: {:?}",
+            s.pedidos()
+        );
+    }
+
+    /// Entre candidatos sincronizados, vence a duração mais próxima — é o que
+    /// separa a gravação de estúdio da versão ao vivo.
+    #[tokio::test]
+    async fn escolhe_o_candidato_de_duracao_mais_proxima() {
+        let s = servidor(vec![
+            (
+                "/api/get/700",
+                Resposta::json(faixa_json(700, "Creep (ao vivo)", 300.0, true).to_string()),
+            ),
+            (
+                "/api/get/496",
+                Resposta::json(faixa_json(496, "Creep", 239.0, true).to_string()),
+            ),
+            ("/api/get", Resposta::status(404)),
+            (
+                "/api/search",
+                Resposta::json(
+                    serde_json::json!([
+                        faixa_json(700, "Creep (ao vivo)", 300.0, true),
+                        faixa_json(496, "Creep", 239.0, true),
+                    ])
+                    .to_string(),
+                ),
+            ),
+        ])
+        .await;
+
+        LrcLib::com_base(&s.base)
+            .fetch(&faixa(Some(238_000)))
+            .await
+            .expect("devia escolher alguma");
+
+        assert!(
+            s.pediu("/api/get/496"),
+            "escolheu a duração errada: {:?}",
+            s.pedidos()
+        );
+    }
+
+    /// Letra corrida não serve para um overlay que acompanha a música: melhor
+    /// dizer que não achou do que exibir um bloco de texto parado.
+    #[tokio::test]
+    async fn ignora_candidato_sem_sincronia() {
+        let s = servidor(vec![
+            ("/api/get", Resposta::status(404)),
+            (
+                "/api/search",
+                Resposta::json(
+                    serde_json::json!([faixa_json(496, "Creep", 239.0, false)]).to_string(),
+                ),
+            ),
+        ])
+        .await;
+
+        let erro = LrcLib::com_base(&s.base)
+            .fetch(&faixa(Some(239_000)))
+            .await
+            .expect_err("não devia aceitar letra sem sincronia");
+        assert!(matches!(erro, LyricsError::NotFound), "veio {erro:?}");
+    }
+
+    /// Fora da tolerância é outra gravação, e a sincronia não bateria.
+    #[tokio::test]
+    async fn descarta_candidato_com_duracao_muito_diferente() {
+        let s = servidor(vec![
+            ("/api/get", Resposta::status(404)),
+            (
+                "/api/search",
+                Resposta::json(
+                    serde_json::json!([faixa_json(700, "Creep (estendida)", 400.0, true)])
+                        .to_string(),
+                ),
+            ),
+        ])
+        .await;
+
+        let erro = LrcLib::com_base(&s.base)
+            .fetch(&faixa(Some(239_000)))
+            .await
+            .expect_err("400s contra 239s é outra faixa");
+        assert!(matches!(erro, LyricsError::NotFound), "veio {erro:?}");
+    }
+
+    /// Falha de rede não é ausência de letra. Recuar aqui gastaria uma segunda
+    /// requisição que vai falhar igual, e pior: um 500 momentâneo viraria
+    /// "sem letra" gravado no cache.
+    #[tokio::test]
+    async fn erro_do_servidor_nao_vira_busca_ampla() {
+        let s = servidor(vec![("/api/get", Resposta::status(500))]).await;
+
+        let erro = LrcLib::com_base(&s.base)
+            .fetch(&faixa(Some(239_000)))
+            .await
+            .expect_err("500 não é 'não achei'");
+
+        assert!(matches!(erro, LyricsError::Network(_)), "veio {erro:?}");
+        assert!(
+            !s.pediu("/api/search"),
+            "recuou depois de erro de rede: {:?}",
+            s.pedidos()
+        );
+    }
+
+    #[tokio::test]
+    async fn resposta_ilegivel_vira_erro_de_decodificacao() {
+        let s = servidor(vec![("/api/get", Resposta::json("{isto não é json"))]).await;
+
+        let erro = LrcLib::com_base(&s.base)
+            .fetch(&faixa(Some(239_000)))
+            .await
+            .expect_err("json quebrado devia falhar");
+        assert!(matches!(erro, LyricsError::Decode(_)), "veio {erro:?}");
+    }
+
+    /// Faixa cuja duração o player não informou: sem alvo, não dá para
+    /// descartar por duração — mas ainda dá para exigir sincronia.
+    #[tokio::test]
+    async fn sem_duracao_conhecida_ainda_escolhe_uma_sincronizada() {
+        let s = servidor(vec![
+            (
+                "/api/get/496",
+                Resposta::json(faixa_json(496, "Creep", 239.0, true).to_string()),
+            ),
+            ("/api/get", Resposta::status(404)),
+            (
+                "/api/search",
+                Resposta::json(
+                    serde_json::json!([
+                        faixa_json(900, "Creep", 239.0, false),
+                        faixa_json(496, "Creep", 239.0, true),
+                    ])
+                    .to_string(),
+                ),
+            ),
+        ])
+        .await;
+
+        LrcLib::com_base(&s.base)
+            .fetch(&faixa(None))
+            .await
+            .expect("devia escolher a sincronizada");
+        assert!(s.pediu("/api/get/496"), "pediu {:?}", s.pedidos());
     }
 }
