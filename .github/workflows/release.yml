@@ -8,27 +8,20 @@ permissions:
   contents: write
   pull-requests: write
 
+# A ordem dos jobs é a correção do #44: o portão de qualidade vem *antes* de a
+# release existir, não depois. Empacota → testa em ambiente limpo → só então
+# versiona e publica. Enquanto o portão estava depois, uma falha de fumaça
+# produzia uma release pública e vazia — pior do que a que ela tentava evitar.
+#
+# A primeira tentativa de resolver isso foi fazer a release nascer como
+# rascunho. Não funciona: **release em rascunho não cria a tag no git**, e a
+# release-please usa a tag como âncora para saber até onde já releasou. Sem
+# âncora ela re-escaneia o histórico inteiro e propõe uma release nova a cada
+# commit que cai no main — um loop que gerou dez releases vazias em sete
+# minutos. Daí a inversão de ordem, que não depende de flag nenhuma.
 jobs:
-  # Lê os commits desde a última versão, decide o próximo X.Y.Z pelo tipo de
-  # cada um (feat → minor, fix → patch, ! → major) e mantém um PR de release
-  # aberto com o CHANGELOG. Nada é publicado até esse PR ser aprovado.
-  versao:
-    name: Versionamento
-    runs-on: ubuntu-22.04
-    outputs:
-      publicar: ${{ steps.release.outputs.release_created }}
-      tag: ${{ steps.release.outputs.tag_name }}
-    steps:
-      - uses: googleapis/release-please-action@v4
-        id: release
-        with:
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
-
   pacotes:
     name: Pacotes Linux
-    needs: versao
-    if: needs.versao.outputs.publicar == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -157,7 +150,7 @@ jobs:
   # todo símbolo dinâmico resolve. Ver #33.
   fumaca:
     name: Instalação em ambiente limpo (${{ matrix.alvo }})
-    needs: [versao, pacotes]
+    needs: pacotes
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
@@ -189,13 +182,30 @@ jobs:
             echo "todos os símbolos resolvem."
           '
 
-      - name: Conferir que o AppImage é autossuficiente
+      # O AppImage traz a pilha do *app* (webkit, gtk, appindicator,
+      # gtk-layer-shell) e deliberadamente **não** traz a pilha gráfica —
+      # libGL, libEGL, libwayland, libdrm, libgbm, libX11 precisam casar com o
+      # driver e o compositor da máquina de destino, e empacotá-las foi o que
+      # quebrou a v0.2.1 (#30). Então o contêiner aqui recebe a pilha gráfica,
+      # que qualquer desktop tem, e nada do que o AppImage promete trazer
+      # dentro: o que faltar depois disso é regressão de empacotamento.
+      #
+      # A versão anterior deste passo não instalava nada e exigia que tudo
+      # resolvesse — as duas metades da política brigando entre si. Nunca
+      # chegou a rodar porque o passo anterior falhava antes (#43); assim que
+      # ele passou, este reprovou com dezesseis bibliotecas que o AppImage
+      # nunca teve a intenção de carregar.
+      - name: Conferir que o AppImage traz a pilha do app
         if: matrix.alvo == 'deb'
         run: |
           set -euo pipefail
           docker run --rm -v "$PWD:/pacotes" -w /tmp ubuntu:24.04 sh -euc '
             apt-get update -qq
-            apt-get install -y -qq --no-install-recommends ca-certificates file
+            apt-get install -y -qq --no-install-recommends ca-certificates file \
+              libgl1 libegl1 libgbm1 libdrm2 \
+              libwayland-client0 libwayland-cursor0 libwayland-egl1 libwayland-server0 \
+              libx11-6 libx11-xcb1 libxcb1 \
+              libharfbuzz0b libfontconfig1 libfreetype6 libexpat1 libfribidi0
             cp /pacotes/lyricslens-x86_64.AppImage .
             chmod +x lyricslens-x86_64.AppImage
             ./lyricslens-x86_64.AppImage --appimage-extract >/dev/null
@@ -203,16 +213,37 @@ jobs:
             faltando=$(LD_LIBRARY_PATH=/tmp/squashfs-root/usr/lib \
               ldd /tmp/squashfs-root/usr/bin/lyricslens | grep "not found" || true)
             if [ -n "$faltando" ]; then
-              echo "o AppImage não é autossuficiente numa máquina sem as dependências:"
+              echo "o AppImage deixou de trazer o que precisa trazer:"
               echo "$faltando"
               exit 1
             fi
-            echo "o AppImage resolve tudo sozinho."
+            echo "o AppImage traz a pilha do app e só depende da pilha gráfica do sistema."
           '
+
+  # Lê os commits desde a última versão, decide o próximo X.Y.Z pelo tipo de
+  # cada um (feat → minor, fix → patch, ! → major) e mantém um PR de release
+  # aberto com o CHANGELOG. Nada é publicado até esse PR ser aprovado.
+  #
+  # Roda depois do `fumaca` de propósito: se os pacotes deste commit não passam
+  # no ambiente limpo, nem a tag nem a release chegam a existir.
+  versao:
+    name: Versionamento
+    needs: fumaca
+    runs-on: ubuntu-22.04
+    outputs:
+      publicar: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
 
   publicar:
     name: Publicar
-    needs: [versao, pacotes, fumaca]
+    needs: [pacotes, fumaca, versao]
+    if: needs.versao.outputs.publicar == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -240,15 +271,3 @@ jobs:
           printf '\n' >> corpo.md
           cat .github/release-footer.md >> corpo.md
           gh release edit "$TAG" --notes-file corpo.md
-
-      # O portão de qualidade só serve se vier antes da publicação. A release
-      # nasce como rascunho (`draft` no release-please-config.json) e só fica
-      # visível aqui, com os pacotes já anexados — este job é o último da
-      # cadeia. Se qualquer etapa anterior falhar, `latest` continua sendo a
-      # última release que de fato funciona, e o install.sh segue servindo os
-      # usuários enquanto o problema é corrigido. Ver #44.
-      - name: Publicar a release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.versao.outputs.tag }}
-        run: gh release edit "$TAG" --draft=false --latest
