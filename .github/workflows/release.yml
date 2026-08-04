@@ -204,7 +204,17 @@ jobs:
           - alvo: rpm
             imagem: fedora:41
             instalar: dnf install -y --setopt=install_weak_deps=False ./lyricslens-x86_64.rpm
+          # O terceiro caminho que o README oferece, e o único que nunca era
+          # exercitado: o `install.sh`. Ele serve Arch e qualquer distro sem
+          # sudo, e instala em `~/.local` — um layout completamente diferente
+          # dos outros dois. Ver #33.
+          - alvo: script
+            imagem: archlinux:latest
+            instalar: "(o alvo script tem passo próprio)"
     steps:
+      # O `install.sh` vem do repositório, não do artefato — o alvo `script`
+      # precisa dele.
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: dist-release
@@ -212,6 +222,7 @@ jobs:
       # Sem timeout um travamento consome as seis horas do runner em silêncio.
       # Este passo levou 8min no run 30923464670 — 20 é folga larga, não meta.
       - name: Instalar o pacote e conferir os símbolos
+        if: matrix.alvo != 'script'
         timeout-minutes: 20
         run: |
           set -euo pipefail
@@ -226,6 +237,110 @@ jobs:
               exit 1
             fi
             echo "todos os símbolos resolvem."
+          '
+
+      # O `install.sh` é buscado do `main` e baixa da release — apontá-lo para
+      # um servidor local com os artefatos desta build é o que faz o teste
+      # dizer algo sobre *esta* release, e não sobre a anterior.
+      - name: Instalar pelo script
+        if: matrix.alvo == 'script'
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:/pacotes" -w /pacotes archlinux:latest sh -euc '
+            pacman -Sy --noconfirm --needed curl python webkit2gtk-4.1 gtk3 \
+              libayatana-appindicator gtk-layer-shell >/dev/null
+
+            # Servidor local com os artefatos recém-construídos.
+            ( cd /pacotes && python -m http.server 8000 >/dev/null 2>&1 ) &
+            for _ in $(seq 20); do
+              curl -sf http://127.0.0.1:8000/SHA256SUMS >/dev/null && break
+              sleep 1
+            done
+
+            useradd -m testador
+            cp /pacotes/install.sh /home/testador/install.sh
+            chown -R testador /home/testador
+
+            echo "--- instalando pelo script, como o README manda"
+            su testador -c "LYRICSLENS_BASE=http://127.0.0.1:8000 sh /home/testador/install.sh"
+
+            echo "--- conferindo o que ficou instalado"
+            test -x /home/testador/.local/bin/lyricslens || { echo "::error::sem executável"; exit 1; }
+            test -f /home/testador/.local/share/applications/lyricslens.desktop || { echo "::error::sem atalho no menu"; exit 1; }
+
+            faltando=$(su testador -c "ldd \$(readlink -f /home/testador/.local/bin/lyricslens) 2>/dev/null" | grep "not found" || true)
+            echo "--- e que ele roda"
+            su testador -c "/home/testador/.local/bin/lyricslens --version"
+          '
+
+      # O passo que faltava da #33: até aqui o pipeline conferia que os
+      # símbolos resolvem, mas **nunca chegava a executar o app**. Símbolo
+      # resolvido não é o mesmo que janela que abre — o #30 é a prova, e ele
+      # passou por todo o CI até chegar numa release.
+      #
+      # O critério de sucesso é **continuar vivo**. O app é um daemon de
+      # bandeja: ele não termina sozinho, então o `timeout` matá-lo (124) é o
+      # resultado bom. Sair antes disso é que é falha, e o stderr diz de quê.
+      - name: Abrir o app num compositor headless
+        if: matrix.alvo == 'deb'
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:/pacotes" -w /pacotes ubuntu:24.04 sh -euc '
+            export DEBIAN_FRONTEND=noninteractive
+            APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
+            sed -i -e "s|//archive.ubuntu.com|//azure.archive.ubuntu.com|g" -e "s|//security.ubuntu.com|//azure.archive.ubuntu.com|g" /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null || true
+
+            echo "--- instalando o pacote e o compositor"
+            apt-get $APT_OPTS update -qq
+            apt-get $APT_OPTS install -y --no-install-recommends \
+              ./lyricslens-x86_64.deb weston libgl1-mesa-dri
+
+            # O Wayland exige um XDG_RUNTIME_DIR com permissão restrita; sem
+            # ele o compositor nem sobe.
+            export XDG_RUNTIME_DIR=/tmp/run
+            mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+            export WAYLAND_DISPLAY=wayland-teste
+
+            echo "--- subindo o weston headless"
+            weston --backend=headless --socket="$WAYLAND_DISPLAY" --idle-time=0 \
+              >/tmp/weston.log 2>&1 &
+            for _ in $(seq 30); do
+              [ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ] && break
+              sleep 1
+            done
+            if [ ! -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]; then
+              echo "::error::o weston não subiu"
+              cat /tmp/weston.log
+              exit 1
+            fi
+
+            echo "--- abrindo o LyricsLens"
+            set +e
+            timeout 25 lyricslens >/tmp/app.log 2>&1
+            codigo=$?
+            set -e
+            echo "--- saída do app (código $codigo)"
+            cat /tmp/app.log
+
+            # 124 é o timeout matando um app que continuou de pé — o que se
+            # quer. Qualquer outro código é ele tendo desistido sozinho.
+            if [ "$codigo" -ne 124 ]; then
+              echo "::error::o app não se manteve de pé (código $codigo)"
+              exit 1
+            fi
+
+            # Estes quatro são as assinaturas das falhas que já chegaram a uma
+            # release: EGL quebrado (#30), biblioteca ausente (#22), símbolo
+            # que não resolve, e abort do WebKit.
+            for padrao in "EGL_BAD" "error while loading shared libraries" "symbol lookup error" "Aborting"; do
+              if grep -qi "$padrao" /tmp/app.log; then
+                echo "::error::o app reclamou de: $padrao"
+                exit 1
+              fi
+            done
+            echo "o app abriu e se manteve de pé sob um compositor headless."
           '
 
       # O AppImage traz a pilha do *app* (webkit, gtk, appindicator,
