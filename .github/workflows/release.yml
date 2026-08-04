@@ -156,21 +156,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # `--no-install-recommends` / `install_weak_deps=False` não são só
+          # velocidade: o teste pergunta se o pacote **declara** o que o binário
+          # precisa, e recommends instalados por tabela podem fazer um símbolo
+          # resolver por sorte. Sem eles, só as dependências declaradas contam.
           - alvo: deb
             imagem: ubuntu:24.04
-            instalar: apt-get update -qq && apt-get install -y -qq ./lyricslens-x86_64.deb
+            instalar: apt-get update -qq && apt-get install -y --no-install-recommends ./lyricslens-x86_64.deb
           - alvo: rpm
             imagem: fedora:41
-            instalar: dnf install -y -q ./lyricslens-x86_64.rpm
+            instalar: dnf install -y --setopt=install_weak_deps=False ./lyricslens-x86_64.rpm
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: dist-release
 
+      # Sem timeout um travamento consome as seis horas do runner em silêncio.
+      # Este passo levou 8min no run 30923464670 — 20 é folga larga, não meta.
       - name: Instalar o pacote e conferir os símbolos
+        timeout-minutes: 20
         run: |
           set -euo pipefail
           docker run --rm -v "$PWD:/pacotes" -w /pacotes ${{ matrix.imagem }} sh -euc '
+            echo "--- instalando o pacote"
             ${{ matrix.instalar }}
             echo "--- instalado; conferindo as dependências dinâmicas"
             faltando=$(ldd /usr/bin/lyricslens | grep "not found" || true)
@@ -195,20 +203,32 @@ jobs:
       # chegou a rodar porque o passo anterior falhava antes (#43); assim que
       # ele passou, este reprovou com dezesseis bibliotecas que o AppImage
       # nunca teve a intenção de carregar.
+      #
+      # Os marcadores `---` existem para o log dizer onde o tempo vai: este
+      # passo levou 16min no run 30923464670 instalando dois pacotes minúsculos
+      # e extraindo um AppImage, o que não fecha. O `-qq` e o `>/dev/null` de
+      # antes escondiam exatamente a informação necessária para descobrir por
+      # quê — job lento e silencioso é indistinguível de job travado.
       - name: Conferir que o AppImage traz a pilha do app
         if: matrix.alvo == 'deb'
+        timeout-minutes: 20
         run: |
           set -euo pipefail
           docker run --rm -v "$PWD:/pacotes" -w /tmp ubuntu:24.04 sh -euc '
+            echo "--- apt-get update"
             apt-get update -qq
-            apt-get install -y -qq --no-install-recommends ca-certificates file \
+            echo "--- instalando a pilha gráfica do sistema"
+            apt-get install -y --no-install-recommends ca-certificates file \
               libgl1 libegl1 libgbm1 libdrm2 \
               libwayland-client0 libwayland-cursor0 libwayland-egl1 libwayland-server0 \
               libx11-6 libx11-xcb1 libxcb1 \
               libharfbuzz0b libfontconfig1 libfreetype6 libexpat1 libfribidi0
+            echo "--- copiando o AppImage"
             cp /pacotes/lyricslens-x86_64.AppImage .
             chmod +x lyricslens-x86_64.AppImage
+            echo "--- extraindo o AppImage"
             ./lyricslens-x86_64.AppImage --appimage-extract >/dev/null
+            du -sh /tmp/squashfs-root
             echo "--- conferindo os símbolos com o LD_LIBRARY_PATH que o AppRun monta"
             faltando=$(LD_LIBRARY_PATH=/tmp/squashfs-root/usr/lib \
               ldd /tmp/squashfs-root/usr/bin/lyricslens | grep "not found" || true)
