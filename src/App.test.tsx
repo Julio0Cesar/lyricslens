@@ -29,6 +29,7 @@ const PREFERENCIAS: Settings = {
   showContextLines: true,
   showTrackInfo: false,
   showProgress: false,
+  showCover: false,
   textAlign: "left",
   karaoke: true,
   clickThrough: false,
@@ -77,6 +78,7 @@ function cenario(ajustes: Partial<Settings> = {}) {
   responder("last_problem", null);
   responder("now_playing", { track: null, state: "stopped", positionMs: 0 });
   responder("current_lyrics", null);
+  responder("current_cover", null);
   responder("open_settings", null);
   responder("remember_overlay_position", null);
 }
@@ -213,6 +215,54 @@ describe("chegada das preferências", () => {
 
     // Com a informação de faixa ligada, a fonte e o título aparecem.
     expect(await screen.findByText("spotify")).toBeInTheDocument();
+  });
+});
+
+/**
+ * A capa é enfeite, e enfeite errado é pior que enfeite nenhum: capa de outro
+ * disco faz parecer que o app se confundiu de música, não de imagem.
+ */
+describe("capa do álbum", () => {
+  const CAPA = "https://exemplo/capa.jpg";
+
+  async function comCapa(ajustes: Partial<Settings>) {
+    responder("get_settings", { ...PREFERENCIAS, ...ajustes });
+    await montar();
+    act(() => {
+      emitir("media", { kind: "trackChanged", track: FAIXA });
+      emitir("lyrics", {
+        status: "found",
+        trackKey: "radiohead|creep",
+        lyrics: comLetra([[0, "When you were here before"]]),
+      });
+    });
+  }
+
+  it("desligada, não aparece nem quando existe", async () => {
+    await comCapa({ showCover: false });
+    act(() => emitir("cover", { trackKey: "radiohead|creep", url: CAPA }));
+    expect(document.querySelector("img")).toBeNull();
+  });
+
+  it("ligada, aparece quando o backend acha", async () => {
+    await comCapa({ showCover: true });
+    act(() => emitir("cover", { trackKey: "radiohead|creep", url: CAPA }));
+    await waitFor(() => expect(document.querySelector("img")).not.toBeNull());
+    expect(document.querySelector("img")).toHaveAttribute("src", CAPA);
+  });
+
+  it("ligada mas sem capa encontrada, não deixa buraco na tela", async () => {
+    await comCapa({ showCover: true });
+    act(() => emitir("cover", { trackKey: "radiohead|creep", url: null }));
+    expect(document.querySelector("img")).toBeNull();
+  });
+
+  /// Uma busca lenta pode responder depois da troca de música. A capa do disco
+  /// anterior sobre a letra do novo é o defeito que mais parece bug de faixa.
+  it("ignora a capa que chega para outra faixa", async () => {
+    await comCapa({ showCover: true });
+    act(() => emitir("cover", { trackKey: "outra|musica", url: CAPA }));
+    expect(document.querySelector("img")).toBeNull();
   });
 });
 

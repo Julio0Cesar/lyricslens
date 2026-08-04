@@ -10,6 +10,7 @@ import {
 } from "./media/useNowPlaying";
 import LyricLines from "./lyrics/LyricLines";
 import { lineAt, lineProgress, useLyrics } from "./lyrics/useLyrics";
+import { useCover } from "./lyrics/useCover";
 import { useSettings, type Settings } from "./settings/useSettings";
 
 /** `#0a0a0e` + 0.55 → `rgba(10, 10, 14, 0.55)`. */
@@ -129,7 +130,8 @@ function App() {
       : PASSO_FINO_MS;
   const { track, positionMs } = useNowPlaying(passo);
   const identity = track ? `${track.artist}|${track.title}` : null;
-  const { status, lyrics } = useLyrics(identity);
+  const { status, lyrics, trackKey } = useLyrics(identity);
+  const capa = useCover(trackKey);
   const buscaDemorada = useAtraso(status === "searching", 700);
   const iniciarArraste = useArrastar();
 
@@ -192,20 +194,45 @@ function App() {
           </div>
         )}
 
-        <AnimatePresence mode="wait">
-          {aviso ? (
-            <Aviso key={aviso} texto={aviso} settings={settings} />
-          ) : (
-            <motion.div key="letra" className="min-w-0">
-              <LyricLines
-                lines={lines}
-                index={idx}
-                progress={progress}
-                settings={settings}
-              />
-            </motion.div>
+        <div className="flex min-w-0 items-center gap-4">
+          {settings.showCover && capa && (
+            <img
+              src={capa}
+              alt=""
+              // `alt` vazio de propósito: a capa é decorativa, e um leitor de
+              // tela anunciando "capa do álbum" no meio da letra atrapalha.
+              className="shrink-0 rounded object-cover"
+              style={{
+                // Acompanha a fonte em vez de ser fixa: o overlay é
+                // redimensionável, e capa de tamanho fixo fica desproporcional
+                // nas duas pontas.
+                width: settings.fontSize * 2.6,
+                height: settings.fontSize * 2.6,
+              }}
+              // Capa que não carrega — URL velha do cache, rede caída — não
+              // pode deixar o ícone de imagem quebrada sobre a letra.
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
           )}
-        </AnimatePresence>
+          <div className="min-w-0 flex-1">
+            <AnimatePresence mode="wait">
+              {aviso ? (
+                <Aviso key={aviso} texto={aviso} settings={settings} />
+              ) : (
+                <motion.div key="letra" className="min-w-0">
+                  <LyricLines
+                    lines={lines}
+                    index={idx}
+                    progress={progress}
+                    settings={settings}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
 
         {settings.showProgress && track && (
           <div className="mt-3 flex items-center gap-2">

@@ -1,3 +1,4 @@
+mod cover;
 mod i18n;
 mod log;
 mod lyrics;
@@ -11,6 +12,7 @@ mod update;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
+use cover::CoverProvider;
 use log::logar;
 use lyrics::{lrclib::LrcLib, Candidate, Lyrics, LyricsProvider};
 use media::{MediaEvent, MediaProvider, PlatformProvider, PlaybackState, Track};
@@ -36,6 +38,9 @@ struct AppState {
     last_lyrics: Mutex<Option<LyricsEvent>>,
     cache: Cache,
     provider: LrcLib,
+    capas: cover::deezer::Deezer,
+    /// Última capa resolvida, para a janela que montou depois do evento.
+    last_cover: Mutex<Option<CoverEvent>>,
     settings: Mutex<Settings>,
     settings_store: SettingsStore,
     /// Sobe a cada troca de faixa. Uma busca que volta atrasada compara a
@@ -498,6 +503,84 @@ async fn resolve_lyrics(app: AppHandle, track: Track, generation: u64) {
     }
 }
 
+/// A capa da faixa que está tocando.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CoverEvent {
+    track_key: String,
+    /// `None` quando procuramos e não achamos — a UI precisa distinguir isso de
+    /// "ainda procurando", senão fica com a capa da música anterior na tela.
+    url: Option<String>,
+}
+
+#[tauri::command]
+fn current_cover(state: tauri::State<'_, AppState>) -> Option<CoverEvent> {
+    state.last_cover.lock().unwrap().clone()
+}
+
+/// Descobre a capa: o player primeiro, o cache depois, a rede por último.
+///
+/// A ordem não é só de custo. `mpris:artUrl` é a capa que *aquele player* já
+/// está mostrando — se ele tem uma, é a que o usuário espera ver, mesmo que a
+/// do Deezer fosse "melhor".
+async fn resolve_cover(app: AppHandle, track: Track, generation: u64) {
+    let chave_faixa = track.key();
+    let state = app.state::<AppState>();
+    let atual = || state.generation.load(Ordering::SeqCst) == generation;
+
+    let publicar = |url: Option<String>| {
+        let ev = CoverEvent {
+            track_key: chave_faixa.clone(),
+            url,
+        };
+        *state.last_cover.lock().unwrap() = Some(ev.clone());
+        let _ = app.emit("cover", ev);
+    };
+
+    // 1. O player, quando fornece.
+    if let Some(url) = track.art_url.as_deref().filter(|u| !u.trim().is_empty()) {
+        publicar(Some(url.to_string()));
+        return;
+    }
+
+    let chave = cover::chave_do_album(&track.artist, &track.album);
+
+    // 2. O cache. `Some(None)` é "já procurei e não tem" — não vale repetir a
+    //    busca para cada faixa do mesmo disco.
+    match state.cache.cover(&chave) {
+        Ok(Some(guardada)) => {
+            publicar(guardada);
+            return;
+        }
+        Ok(None) => {}
+        Err(e) => logar!(Aviso, "cover", "cache ilegível: {e}"),
+    }
+
+    // 3. A rede.
+    let achada = match state.capas.find(&track.artist, &track.album).await {
+        Ok(c) => c,
+        Err(e) => {
+            // Capa é enfeite: falhar aqui não merece incomodar o usuário.
+            logar!(Aviso, "cover", "busca falhou para {chave:?}: {e}");
+            return;
+        }
+    };
+
+    if !atual() {
+        return;
+    }
+
+    let url = achada.as_ref().map(|c| c.url.clone());
+    let fonte = achada
+        .as_ref()
+        .map(|c| c.source.as_str())
+        .unwrap_or("nenhuma");
+    if let Err(e) = state.cache.put_cover(&chave, url.as_deref(), fonte) {
+        logar!(Aviso, "cover", "falha ao gravar no cache: {e}");
+    }
+    publicar(url);
+}
+
 /// Consome os eventos do provider, mantém o estado do app e repassa para a UI.
 async fn consume(app: AppHandle, mut rx: mpsc::Receiver<MediaEvent>) {
     while let Some(event) = rx.recv().await {
@@ -545,6 +628,7 @@ async fn consume(app: AppHandle, mut rx: mpsc::Receiver<MediaEvent>) {
         }
 
         if let Some((track, generation)) = buscar {
+            tauri::async_runtime::spawn(resolve_cover(app.clone(), track.clone(), generation));
             tauri::async_runtime::spawn(resolve_lyrics(app.clone(), track, generation));
         }
     }
@@ -651,6 +735,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             now_playing,
             current_lyrics,
+            current_cover,
             cache_stats,
             check_update,
             apply_update,
@@ -691,11 +776,18 @@ pub fn run() {
             let mut now_playing = NowPlaying::default();
             now_playing.clock.set_offset_ms(settings.sync_offset_ms);
 
+            let provider = LrcLib::new()?;
+            // O mesmo cliente serve os dois: `reqwest::Client` compartilha o
+            // pool de conexões, e o pool é o que a #4 mostrou importar.
+            let capas = cover::deezer::Deezer::new(provider.http());
+
             app.manage(AppState {
                 now_playing: Mutex::new(now_playing),
                 last_lyrics: Mutex::new(None),
+                last_cover: Mutex::new(None),
                 cache: Cache::open(&dir.join("lyrics.db"))?,
-                provider: LrcLib::new()?,
+                provider,
+                capas,
                 settings: Mutex::new(settings.clone()),
                 settings_store,
                 generation: AtomicU64::new(0),

@@ -106,6 +106,14 @@ impl LrcLib {
         })
     }
 
+    /// O cliente HTTP, para outro provedor reaproveitar o mesmo pool.
+    ///
+    /// `reqwest::Client` é barato de clonar e compartilha o pool de conexões —
+    /// e o pool é justamente o que a #4 mostrou importar.
+    pub fn http(&self) -> reqwest::Client {
+        self.http.clone()
+    }
+
     /// O mesmo cliente, apontando para outro lugar.
     #[cfg(test)]
     fn com_base(base: impl Into<String>) -> Self {
