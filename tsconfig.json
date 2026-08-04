@@ -20,6 +20,10 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"],
+  // O `vitest.setup.ts` entra aqui porque é ele que importa
+  // `@testing-library/jest-dom/vitest`, e é esse import que ensina ao
+  // TypeScript os matchers `toBeInTheDocument` e companhia. Fora do `include`,
+  // o `tsc` reprova todo teste de componente.
+  "include": ["src", "vitest.setup.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
