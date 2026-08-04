@@ -87,8 +87,8 @@ sha256sum -c SHA256SUMS --ignore-missing
 ## Requirements
 
 - Linux, x86_64
-- `webkit2gtk-4.1`, `gtk3`, `libayatana-appindicator` — the `.deb` and `.rpm`
-  pull these in automatically; the AppImage bundles them
+- `webkit2gtk-4.1`, `gtk3`, `libayatana-appindicator`, `gtk-layer-shell` — the
+  `.deb` and `.rpm` pull these in automatically; the AppImage bundles them
 - A player that exposes MPRIS: Spotify, Chromium, Firefox, VLC…
 
 ### Compatibility by desktop environment

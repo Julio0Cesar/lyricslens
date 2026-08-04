@@ -240,3 +240,15 @@ jobs:
           printf '\n' >> corpo.md
           cat .github/release-footer.md >> corpo.md
           gh release edit "$TAG" --notes-file corpo.md
+
+      # O portão de qualidade só serve se vier antes da publicação. A release
+      # nasce como rascunho (`draft` no release-please-config.json) e só fica
+      # visível aqui, com os pacotes já anexados — este job é o último da
+      # cadeia. Se qualquer etapa anterior falhar, `latest` continua sendo a
+      # última release que de fato funciona, e o install.sh segue servindo os
+      # usuários enquanto o problema é corrigido. Ver #44.
+      - name: Publicar a release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.versao.outputs.tag }}
+        run: gh release edit "$TAG" --draft=false --latest
