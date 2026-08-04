@@ -63,6 +63,14 @@ sistema, **82MB** (autossuficiente) se não estiverem.
 curl -fsSL https://raw.githubusercontent.com/Julio0Cesar/lyricslens/main/install.sh | sh
 ```
 
+No Arch dá também para montar o pacote você mesmo — o `packaging/PKGBUILD`
+deste repositório aponta sempre para a última release:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/Julio0Cesar/lyricslens/main/packaging/PKGBUILD
+makepkg -si
+```
+
 Se preferir ler antes de executar — e é uma boa ideia:
 
 ```bash
