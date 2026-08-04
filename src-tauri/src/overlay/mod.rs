@@ -5,10 +5,10 @@
 //! `docs/ARCHITECTURE.md`): `set_always_on_top` é no-op e a janela abre tiled.
 //! O que funciona é pedir ao compositor via IPC.
 
+pub mod compositor;
 pub mod hotkey;
 pub mod layer_shell;
 
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use crate::log::logar;
@@ -17,9 +17,6 @@ use tauri::{LogicalPosition, LogicalSize, Manager, WebviewWindow};
 
 /// O seletor tem que ser por título: a janela de configurações é do mesmo
 /// processo e da mesma classe (`Lyricslens`), e deve continuar sendo uma janela
-/// normal.
-const SELETOR: &str = "title:^(LyricsLens Overlay)$";
-
 pub const OVERLAY_LABEL: &str = "overlay";
 pub const SETTINGS_LABEL: &str = "settings";
 
@@ -78,112 +75,6 @@ pub fn set_click_through(window: WebviewWindow, enabled: bool) -> Result<(), Str
         .map_err(|e| e.to_string())
 }
 
-pub fn is_hyprland() -> bool {
-    std::env::var("HYPRLAND_INSTANCE_SIGNATURE").is_ok()
-}
-
-pub(crate) fn hyprctl(args: &[&str]) -> Result<String, String> {
-    let out = std::process::Command::new("hyprctl")
-        .args(args)
-        .output()
-        .map_err(|e| format!("hyprctl indisponível: {e}"))?;
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
-}
-
-/// Qual sintaxe de `dispatch` o compositor desta máquina entende.
-///
-/// O Hyprland 0.55 trocou o parser do `hyprctl dispatch` por Lua. A sintaxe de
-/// string — `dispatch setfloating title:^(...)$` — deixou de existir e passou a
-/// devolver erro de sintaxe **de Lua**, não "dispatcher inválido". Como o app
-/// lia só o stdout e não checava o conteúdo, ele seguia achando que tinha dado
-/// certo: o resultado é o overlay parar de flutuar, de ser fixado e de assumir
-/// tamanho e posição, em silêncio, depois de uma atualização do compositor.
-#[derive(Clone, Copy, PartialEq, Debug)]
-enum Dialeto {
-    /// `dispatch setfloating title:^(...)$`
-    Legado,
-    /// `dispatch hl.dsp.window.float{ window = hl.get_window("...") }`
-    Lua,
-}
-
-fn dialeto() -> Dialeto {
-    static CACHE: OnceLock<Dialeto> = OnceLock::new();
-    *CACHE.get_or_init(|| {
-        // Sonda sem efeito colateral nos dois lados: o seletor não casa com
-        // janela nenhuma, então o Hyprland antigo responde "ok" sem fazer nada
-        // e o novo falha no parser antes de chegar a agir.
-        let sonda = hyprctl(&["dispatch", "setfloating", "title:^(__lyricslens_probe__)$"])
-            .unwrap_or_default();
-        let d = if sonda.starts_with("error:") || sonda.contains("hl.dispatch") {
-            Dialeto::Lua
-        } else {
-            Dialeto::Legado
-        };
-        logar!(Info, "overlay", "hyprctl no dialeto {d:?}");
-        d
-    })
-}
-
-/// A janela do overlay, na forma que o dialeto Lua espera receber.
-fn alvo_lua() -> String {
-    format!("window = hl.get_window(\"{SELETOR}\")")
-}
-
-fn flutuar() -> Result<String, String> {
-    match dialeto() {
-        Dialeto::Legado => hyprctl(&["dispatch", "setfloating", SELETOR]),
-        // Na API Lua `float` é **toggle**, não setter: chamar numa janela que
-        // já flutua a devolve para o mosaico. Quem garante a idempotência é o
-        // chamador, lendo o estado antes.
-        Dialeto::Lua => hyprctl(&[
-            "dispatch",
-            &format!("hl.dsp.window.float{{ {} }}", alvo_lua()),
-        ]),
-    }
-}
-
-fn fixar() -> Result<String, String> {
-    match dialeto() {
-        Dialeto::Legado => hyprctl(&["dispatch", "pin", SELETOR]),
-        // `pin` também é toggle.
-        Dialeto::Lua => hyprctl(&[
-            "dispatch",
-            &format!("hl.dsp.window.pin{{ {} }}", alvo_lua()),
-        ]),
-    }
-}
-
-fn redimensionar(largura: i32, altura: i32) -> Result<String, String> {
-    match dialeto() {
-        Dialeto::Legado => hyprctl(&[
-            "dispatch",
-            "resizewindowpixel",
-            &format!("exact {largura} {altura},{SELETOR}"),
-        ]),
-        Dialeto::Lua => hyprctl(&[
-            "dispatch",
-            &format!(
-                "hl.dsp.window.resize{{ x = {largura}, y = {altura}, {} }}",
-                alvo_lua()
-            ),
-        ]),
-    }
-}
-
-fn mover(x: i32, y: i32) -> Result<String, String> {
-    match dialeto() {
-        Dialeto::Legado => hyprctl(&[
-            "dispatch",
-            "movewindowpixel",
-            &format!("exact {x} {y},{SELETOR}"),
-        ]),
-        Dialeto::Lua => hyprctl(&[
-            "dispatch",
-            &format!("hl.dsp.window.move{{ x = {x}, y = {y}, {} }}", alvo_lua()),
-        ]),
-    }
-}
-
 /// Pede ao compositor o que o Wayland não deixa a janela pedir por conta
 /// própria: flutuar, ficar fixa em todas as áreas de trabalho, e assumir
 /// tamanho e posição escolhidos.
@@ -202,74 +93,29 @@ pub fn apply_rules(window: &WebviewWindow, geo: Geometry) -> Result<String, Stri
     // da camada, e mexer nos sliders não mudava nada. Ver #36.
     let _ = window.set_size(LogicalSize::new(geo.width as f64, geo.height as f64));
 
-    if !is_hyprland() {
-        // Em X11 isto funciona de verdade; em Wayland o compositor ignora, e
-        // aí não há o que fazer sem uma implementação por compositor (#12).
+    let c = compositor::atual();
+
+    if !c.sabe_posicionar() {
+        // Em X11 o `set_position` do Tauri funciona de verdade; em Wayland
+        // desconhecido o compositor ignora, e não há o que fazer. A mensagem
+        // diz isso em vez de fingir que a janela foi posta em algum lugar.
         if let Some((x, y)) = posicao_desejada(window, geo) {
             let _ = window.set_position(LogicalPosition::new(x as f64, y as f64));
         }
         return Ok("compositor sem regras conhecidas — janela fica como o sistema decidir".into());
     }
 
-    // Flutuar e fixar são toggles no dialeto Lua, então só são chamados quando
-    // o estado atual não é o desejado. Sem isto, reaplicar as regras — o que
-    // acontece a cada `show` e a cada mudança de geometria — desfaria o que a
-    // aplicação anterior fez.
-    let estado = cliente_overlay();
-    let bool_de = |campo: &str| {
-        estado
-            .as_ref()
-            .and_then(|c| c.get(campo))
-            .and_then(|v| v.as_bool())
-    };
-
-    if bool_de("floating") != Some(true) {
-        flutuar()?;
-    }
-    if bool_de("pinned") != Some(true) {
-        fixar()?;
-    }
-
-    redimensionar(geo.width, geo.height)?;
-
+    c.preparar(geo.width, geo.height)?;
     if let Some((x, y)) = posicao_desejada(window, geo) {
-        mover(x, y)?;
+        c.mover(x, y)?;
     }
 
-    Ok("regras aplicadas".into())
-}
-
-/// Nossa janela na lista de clientes do compositor.
-fn cliente_overlay() -> Option<serde_json::Value> {
-    let json = hyprctl(&["-j", "clients"]).ok()?;
-    let clients: serde_json::Value = serde_json::from_str(&json).ok()?;
-    clients
-        .as_array()?
-        .iter()
-        .find(|c| c.get("title").and_then(|t| t.as_str()) == Some("LyricsLens Overlay"))
-        .cloned()
+    Ok(format!("regras aplicadas ({})", c.nome()))
 }
 
 /// Geometria `(x, y, largura, altura)` do monitor onde o overlay está.
 fn monitor_do_overlay() -> Option<(i32, i32, i32, i32)> {
-    if !is_hyprland() {
-        return None;
-    }
-    let id = cliente_overlay()?.get("monitor")?.as_i64()?;
-
-    let json = hyprctl(&["-j", "monitors"]).ok()?;
-    let monitors: serde_json::Value = serde_json::from_str(&json).ok()?;
-    let m = monitors
-        .as_array()?
-        .iter()
-        .find(|m| m.get("id").and_then(|i| i.as_i64()) == Some(id))?;
-
-    Some((
-        m.get("x")?.as_i64()? as i32,
-        m.get("y")?.as_i64()? as i32,
-        m.get("width")?.as_i64()? as i32,
-        m.get("height")?.as_i64()? as i32,
-    ))
+    compositor::atual().monitor_do_overlay()
 }
 
 /// Geometria de todos os monitores, `(x, y, largura, altura)`.
@@ -278,11 +124,9 @@ fn monitor_do_overlay() -> Option<(i32, i32, i32, i32)> {
 /// inicializado antes de ela existir, e nesse ponto o Tauri ainda não conhece
 /// monitor nenhum.
 fn monitores(window: &WebviewWindow) -> Vec<(i32, i32, i32, i32)> {
-    if is_hyprland() {
-        if let Some(list) = monitores_do_compositor() {
-            if !list.is_empty() {
-                return list;
-            }
+    if let Some(lista) = compositor::atual().monitores() {
+        if !lista.is_empty() {
+            return lista;
         }
     }
     window
@@ -296,25 +140,6 @@ fn monitores(window: &WebviewWindow) -> Vec<(i32, i32, i32, i32)> {
                 .collect()
         })
         .unwrap_or_default()
-}
-
-fn monitores_do_compositor() -> Option<Vec<(i32, i32, i32, i32)>> {
-    let json = hyprctl(&["-j", "monitors"]).ok()?;
-    let monitors: serde_json::Value = serde_json::from_str(&json).ok()?;
-    Some(
-        monitors
-            .as_array()?
-            .iter()
-            .filter_map(|m| {
-                Some((
-                    m.get("x")?.as_i64()? as i32,
-                    m.get("y")?.as_i64()? as i32,
-                    m.get("width")?.as_i64()? as i32,
-                    m.get("height")?.as_i64()? as i32,
-                ))
-            })
-            .collect(),
-    )
 }
 
 /// Quanto da janela precisa sobrar dentro de um monitor para ela ainda ser
@@ -377,23 +202,19 @@ fn posicao_desejada(window: &WebviewWindow, geo: Geometry) -> Option<(i32, i32)>
 /// Em Wayland o cliente não sabe a própria posição — o protocolo não conta.
 /// Quem sabe é o compositor, então é a ele que se pergunta.
 pub fn current_position() -> Option<(i32, i32)> {
-    if !is_hyprland() {
-        return None;
-    }
-    let at = cliente_overlay()?;
-    let at = at.get("at")?.as_array()?;
-    Some((at.first()?.as_i64()? as i32, at.get(1)?.as_i64()? as i32))
+    compositor::atual().posicao_atual()
 }
 
 /// As regras só pegam depois que o compositor conhece a janela. Em vez de um
 /// `sleep` no escuro, espera ela aparecer na lista de clientes.
 pub async fn apply_rules_when_mapped(window: WebviewWindow, geo: Geometry) {
-    if geo.layer_shell || !is_hyprland() {
+    let c = compositor::atual();
+    if geo.layer_shell || !c.sabe_posicionar() {
         return;
     }
 
     for _ in 0..25 {
-        if hyprctl(&["clients"]).is_ok_and(|s| s.contains("LyricsLens Overlay")) {
+        if c.janela_conhecida() {
             if let Err(e) = apply_rules(&window, geo) {
                 logar!(Aviso, "overlay", "regras do compositor falharam: {e}");
             }

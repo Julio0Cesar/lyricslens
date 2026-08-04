@@ -100,7 +100,8 @@ records what was actually tested:
 | Environment | Overlay | Always on top | Automatic positioning | Global hotkey |
 |---|---|---|---|---|
 | Hyprland (Wayland) | ✅ | ✅ | ✅ | ✅ via `hyprctl` |
-| Sway, river, other wlroots | untested ¹ | untested ¹ | ❌ | manual |
+| Sway | untested ² | untested ² | ✅ via `swaymsg` ² | ✅ via `swaymsg` ² |
+| river, other wlroots | untested ¹ | untested ¹ | ❌ | manual |
 | KDE Plasma (Wayland) | untested | untested | ❌ | manual |
 | GNOME (Wayland) | untested | ❌ ² | ❌ | manual |
 | X11 (any WM) | untested | untested | ❌ | manual |
@@ -110,14 +111,18 @@ not a report from use — if you run it on any of them, a comment on
 [#24](https://github.com/Julio0Cesar/lyricslens/issues/24) fills in the row.
 
 ¹ Should work through `wlr-layer-shell`, which those compositors implement.
+² Implemented against the `swaymsg` IPC, but **not tried on a real Sway session** —
+the logic is unit-tested, the conversation with the compositor is not. A report
+on [#12](https://github.com/Julio0Cesar/lyricslens/issues/12) fills this in.
 ² GNOME does not implement `wlr-layer-shell`, so the overlay falls back to an
 ordinary window and cannot stay above fullscreen.
 
-*Automatic positioning* and *global hotkey* currently only know Hyprland — in
+*Automatic positioning* and *global hotkey* know Hyprland and Sway — in
 any other environment, use your own keybinding to call `lyricslens toggle` (see
 [Usage](#usage)). Widening that is
 [#12](https://github.com/Julio0Cesar/lyricslens/issues/12); a blank row in the
-table is a request for help, not an oversight.
+table is a request for help, not an oversight. A compositor beyond these two is
+a new file implementing `Compositor`, not a change to the app.
 
 ## Usage
 
@@ -215,7 +220,7 @@ pnpm tauri dev
 ```
 
 ```bash
-cd src-tauri && cargo test    # 111 tests
+cd src-tauri && cargo test    # 119 tests
 pnpm test           # 72 tests
 pnpm exec tsc --noEmit
 ```

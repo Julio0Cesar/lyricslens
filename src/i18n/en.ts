@@ -146,6 +146,8 @@ export const en = {
     "automatic hotkey only on Hyprland — use your compositor's own keybinding",
   "error.hotkey.refused": (atalho: string, motivo: string) =>
     `the compositor refused "${atalho}": ${motivo}`,
+  "error.hotkey.semCompositor":
+    "automatic hotkey needs a compositor this app knows (Hyprland or Sway) — use your own keybinding calling `lyricslens toggle`",
   "error.hotkey.noExecutable": "could not work out the path to the executable",
   "error.hotkey.compositorFailed": (motivo: string) => `the compositor did not answer: ${motivo}`,
   "error.update.notFromScript":
