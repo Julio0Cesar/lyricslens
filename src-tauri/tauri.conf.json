@@ -62,11 +62,17 @@
       "icons/icon.ico"
     ],
     "linux": {
+      "deb": {
+        "depends": [
+          "libgtk-layer-shell0"
+        ]
+      },
       "rpm": {
         "depends": [
           "webkit2gtk4.1",
           "gtk3",
-          "libayatana-appindicator-gtk3"
+          "libayatana-appindicator-gtk3",
+          "gtk-layer-shell"
         ]
       }
     }
