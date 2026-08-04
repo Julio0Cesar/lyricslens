@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.7.0...v0.8.0) (2026-08-04)
+
+
+### Funcionalidades
+
+* **install:** tarball de 8MB para quem já tem WebKit e GTK ([#72](https://github.com/Julio0Cesar/lyricslens/issues/72)) ([3a60958](https://github.com/Julio0Cesar/lyricslens/commit/3a60958086a5be03cdbc61941bf1488544338a27))
+
 ## [0.7.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.6.0...v0.7.0) (2026-08-04)
 
 
