@@ -94,8 +94,17 @@ impl Default for Settings {
             // roubaria uma combinação que ele já usa.
             hotkey: String::new(),
 
+            // Dimensionado para o padrão *real*: três linhas de letra, sem
+            // informação de faixa e sem barra de progresso. São ~105px de
+            // conteúdo (73 do bloco de linhas, 32 do `py-4` do contêiner); o
+            // resto é folga para uma linha comprida que quebre em duas. Os 300
+            // de antes cabiam tudo ligado, e por isso deixavam 75% da altura
+            // como fundo vazio no primeiro uso — sobre as janelas do usuário,
+            // que é onde o overlay vive. Ligar as duas opções pede aumentar a
+            // altura à mão; a janela acompanhar o conteúdo continua aberto
+            // na #45.
             width: 780,
-            height: 300,
+            height: 160,
             margin_bottom: 80,
             position_x: None,
             position_y: None,
