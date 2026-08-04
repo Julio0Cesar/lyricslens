@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/Julio0Cesar/lyricslens/compare/v0.4.0...v0.4.1) (2026-08-04)
+
+
+### Correções
+
+* **pacotes:** declarar gtk-layer-shell e só publicar release com pacotes ([#46](https://github.com/Julio0Cesar/lyricslens/issues/46)) ([34e89bd](https://github.com/Julio0Cesar/lyricslens/commit/34e89bd0743a32c46f22b385669f06f13fef5ddc))
+
 ## [0.4.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.3.0...v0.4.0) (2026-08-03)
 
 
