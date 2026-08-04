@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.6.0...v0.7.0) (2026-08-04)
+
+
+### Funcionalidades
+
+* **capa:** capa do álbum, do player ou do Deezer ([#70](https://github.com/Julio0Cesar/lyricslens/issues/70)) ([df3817e](https://github.com/Julio0Cesar/lyricslens/commit/df3817e933a03572e5037e7e07a2b8d700ae097e))
+
 ## [0.6.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.5.0...v0.6.0) (2026-08-04)
 
 
