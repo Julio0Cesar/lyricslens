@@ -1,6 +1,6 @@
 [package]
 name = "lyricslens"
-version = "0.6.0" # x-release-please-version
+version = "0.7.0" # x-release-please-version
 description = "Overlay de letras sincronizadas para o desktop"
 authors = ["Julio0Cesar"]
 edition = "2021"
