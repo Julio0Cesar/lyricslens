@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.9.0...v0.10.0) (2026-08-04)
+
+
+### Funcionalidades
+
+* **aur:** PKGBUILD apontando para o tarball da release ([#76](https://github.com/Julio0Cesar/lyricslens/issues/76)) ([715fa05](https://github.com/Julio0Cesar/lyricslens/commit/715fa059ee79b0293d41be878e1b5583af1a7e28))
+
 ## [0.9.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.8.0...v0.9.0) (2026-08-04)
 
 
