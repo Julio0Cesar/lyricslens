@@ -160,9 +160,18 @@ jobs:
           # velocidade: o teste pergunta se o pacote **declara** o que o binário
           # precisa, e recommends instalados por tabela podem fazer um símbolo
           # resolver por sorte. Sem eles, só as dependências declaradas contam.
+          #
+          # `Acquire::Retries` e `Acquire::http::Timeout` são a resposta ao run
+          # 30927660642: 22 minutos de silêncio absoluto entre a imagem baixar
+          # e o cancelamento manual, sem uma linha do apt. O padrão do apt
+          # espera muito tempo por um mirror estagnado; 30s e três tentativas
+          # transformam isso em erro rápido em vez de job pendurado.
           - alvo: deb
             imagem: ubuntu:24.04
-            instalar: apt-get update -qq && apt-get install -y --no-install-recommends ./lyricslens-x86_64.deb
+            instalar: >-
+              export DEBIAN_FRONTEND=noninteractive APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=30";
+              apt-get $APT_OPTS update -qq &&
+              apt-get $APT_OPTS install -y --no-install-recommends ./lyricslens-x86_64.deb
           - alvo: rpm
             imagem: fedora:41
             instalar: dnf install -y --setopt=install_weak_deps=False ./lyricslens-x86_64.rpm
@@ -215,10 +224,12 @@ jobs:
         run: |
           set -euo pipefail
           docker run --rm -v "$PWD:/pacotes" -w /tmp ubuntu:24.04 sh -euc '
+            export DEBIAN_FRONTEND=noninteractive
+            APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=30"
             echo "--- apt-get update"
-            apt-get update -qq
+            apt-get $APT_OPTS update -qq
             echo "--- instalando a pilha gráfica do sistema"
-            apt-get install -y --no-install-recommends ca-certificates file \
+            apt-get $APT_OPTS install -y --no-install-recommends ca-certificates file \
               libgl1 libegl1 libgbm1 libdrm2 \
               libwayland-client0 libwayland-cursor0 libwayland-egl1 libwayland-server0 \
               libx11-6 libx11-xcb1 libxcb1 \
