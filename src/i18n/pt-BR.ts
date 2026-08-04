@@ -50,6 +50,8 @@ export const ptBR: Dicionario = {
   "trackInfo.label": "Informação da faixa",
   "trackInfo.hint": "fonte, artista e título",
   "progressBar.label": "Barra de progresso",
+  "cover.label": "Capa do álbum",
+  "cover.hint": "ao lado da letra, quando o álbum for conhecido",
   "karaoke.label": "Varredura de karaokê",
   "karaoke.hint": "acende a linha conforme ela é cantada",
   "align.label": "Alinhamento",

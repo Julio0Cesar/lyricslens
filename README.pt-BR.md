@@ -200,7 +200,7 @@ palpite — o raciocínio está em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md
 | Janela de configurações | pronto |
 | Escolha manual da letra | pronto |
 | Modo offline | [#2](https://github.com/Julio0Cesar/lyricslens/issues/2) |
-| Capa do álbum | [#3](https://github.com/Julio0Cesar/lyricslens/issues/3) |
+| Capa do álbum | pronto, do player ou do Deezer |
 | Interface em inglês | pronto, segue o seu `LANG` |
 | Tradução das letras | [#1](https://github.com/Julio0Cesar/lyricslens/issues/1) |
 | Windows | [#5](https://github.com/Julio0Cesar/lyricslens/issues/5) |
@@ -213,8 +213,8 @@ pnpm tauri dev
 ```
 
 ```bash
-cd src-tauri && cargo test    # 101 testes
-pnpm test           # 68 testes
+cd src-tauri && cargo test    # 111 testes
+pnpm test           # 72 testes
 pnpm exec tsc --noEmit
 ```
 

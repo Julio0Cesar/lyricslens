@@ -27,6 +27,7 @@ export type Settings = {
   showContextLines: boolean;
   showTrackInfo: boolean;
   showProgress: boolean;
+  showCover: boolean;
   textAlign: TextAlign;
   karaoke: boolean;
 

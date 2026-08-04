@@ -201,7 +201,7 @@ rather than guesswork — the reasoning is in
 | Settings window | done |
 | Manual lyrics override | done |
 | Offline mode | [#2](https://github.com/Julio0Cesar/lyricslens/issues/2) |
-| Album art | [#3](https://github.com/Julio0Cesar/lyricslens/issues/3) |
+| Album art | done, from the player or Deezer |
 | English interface | done, follows your `LANG` |
 | Lyrics translation | [#1](https://github.com/Julio0Cesar/lyricslens/issues/1) |
 | Windows | [#5](https://github.com/Julio0Cesar/lyricslens/issues/5) |
@@ -214,8 +214,8 @@ pnpm tauri dev
 ```
 
 ```bash
-cd src-tauri && cargo test    # 101 tests
-pnpm test           # 68 tests
+cd src-tauri && cargo test    # 111 tests
+pnpm test           # 72 tests
 pnpm exec tsc --noEmit
 ```
 

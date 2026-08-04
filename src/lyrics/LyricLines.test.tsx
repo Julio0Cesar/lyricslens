@@ -25,6 +25,7 @@ const PREFERENCIAS: Settings = {
   showContextLines: true,
   showTrackInfo: false,
   showProgress: false,
+  showCover: false,
   textAlign: "left",
   karaoke: true,
   clickThrough: false,

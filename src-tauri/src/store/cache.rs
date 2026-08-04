@@ -103,6 +103,16 @@ impl Cache {
             );
 
 
+            -- Capa do álbum, não da faixa: um disco de doze músicas custa uma
+            -- busca, não doze. `url` nula é "procurei e não achei", que também
+            -- vale guardar — senão toda faixa do disco tenta de novo.
+            CREATE TABLE IF NOT EXISTS covers (
+                album_key TEXT PRIMARY KEY,
+                url       TEXT,
+                source    TEXT NOT NULL,
+                fetched_at INTEGER NOT NULL
+            );
+
             -- Faixas para as quais não existe letra, para não repetir a busca.
             CREATE TABLE IF NOT EXISTS misses (
                 track_key TEXT PRIMARY KEY,
@@ -225,6 +235,40 @@ impl Cache {
             })?,
             misses: conn.query_row("SELECT COUNT(*) FROM misses", [], |r| r.get(0))?,
         })
+    }
+
+    /// A capa guardada para este álbum, se já procuramos.
+    ///
+    /// `Some(None)` é diferente de `None`: o primeiro é "procurei e não achei",
+    /// o segundo é "nunca procurei". Sem essa diferença, um disco sem capa
+    /// publicada tentaria de novo a cada faixa.
+    pub fn cover(&self, album_key: &str) -> Result<Option<Option<String>>, CacheError> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT url FROM covers WHERE album_key = ?1")?;
+        let mut linhas = stmt.query([album_key])?;
+        match linhas.next()? {
+            Some(l) => Ok(Some(l.get::<_, Option<String>>(0)?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn put_cover(
+        &self,
+        album_key: &str,
+        url: Option<&str>,
+        source: &str,
+    ) -> Result<(), CacheError> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO covers (album_key, url, source, fetched_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(album_key) DO UPDATE SET
+                url = excluded.url,
+                source = excluded.source,
+                fetched_at = excluded.fetched_at",
+            rusqlite::params![album_key, url, source, agora()],
+        )?;
+        Ok(())
     }
 
     /// Marca a faixa como sem letra conhecida.

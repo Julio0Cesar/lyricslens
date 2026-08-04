@@ -36,6 +36,8 @@ pub struct Settings {
     pub show_context_lines: bool,
     pub show_track_info: bool,
     pub show_progress: bool,
+    /// Capa do álbum ao lado da letra.
+    pub show_cover: bool,
     pub text_align: TextAlign,
     pub karaoke: bool,
 
@@ -90,6 +92,9 @@ impl Default for Settings {
             // existem para quem quiser, mas atrapalham o padrão.
             show_track_info: false,
             show_progress: false,
+            // Como as outras duas: o overlay é sobre a letra, e a capa é
+            // enfeite para quem quiser.
+            show_cover: false,
             text_align: TextAlign::Left,
             karaoke: true,
 

@@ -163,6 +163,9 @@ export default function SettingsWindow() {
           <Row label={t["progressBar.label"]}>
             <Toggle value={settings.showProgress} onChange={(v) => update({ showProgress: v })} />
           </Row>
+          <Row label={t["cover.label"]} hint={t["cover.hint"]}>
+            <Toggle value={settings.showCover} onChange={(v) => update({ showCover: v })} />
+          </Row>
           <Row label={t["karaoke.label"]} hint={t["karaoke.hint"]}>
             <Toggle value={settings.karaoke} onChange={(v) => update({ karaoke: v })} />
           </Row>

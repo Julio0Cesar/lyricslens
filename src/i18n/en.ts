@@ -54,6 +54,8 @@ export const en = {
   "trackInfo.label": "Track info",
   "trackInfo.hint": "source, artist and title",
   "progressBar.label": "Progress bar",
+  "cover.label": "Album art",
+  "cover.hint": "next to the lyrics, when the album is known",
   "karaoke.label": "Karaoke sweep",
   "karaoke.hint": "lights each line up as it is sung",
   "align.label": "Alignment",
