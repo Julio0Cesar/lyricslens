@@ -99,7 +99,8 @@ tabela diz o que foi de fato testado:
 | Ambiente | Overlay | Sempre por cima | Posição automática | Atalho global |
 |---|---|---|---|---|
 | Hyprland (Wayland) | ✅ | ✅ | ✅ | ✅ via `hyprctl` |
-| Sway, river e outros wlroots | não testado ¹ | não testado ¹ | ❌ | manual |
+| Sway | não testado ² | não testado ² | ✅ via `swaymsg` ² | ✅ via `swaymsg` ² |
+| river e outros wlroots | não testado ¹ | não testado ¹ | ❌ | manual |
 | KDE Plasma (Wayland) | não testado | não testado | ❌ | manual |
 | GNOME (Wayland) | não testado | ❌ ² | ❌ | manual |
 | X11 (qualquer WM) | não testado | não testado | ❌ | manual |
@@ -109,14 +110,18 @@ não relato de uso — se você rodar em algum deles, um comentário na
 [#24](https://github.com/Julio0Cesar/lyricslens/issues/24) preenche a linha.
 
 ¹ Devem funcionar pelo `wlr-layer-shell`, que esses compositores implementam.
+² Implementado contra o IPC do `swaymsg`, mas **não testado numa sessão Sway de
+verdade** — a lógica tem teste, a conversa com o compositor não. Um relato na
+[#12](https://github.com/Julio0Cesar/lyricslens/issues/12) preenche esta linha.
 ² O GNOME não implementa `wlr-layer-shell`, então o overlay cai para janela
 comum e não consegue ficar acima de tela cheia.
 
-*Posição automática* e *atalho global* hoje só conhecem o Hyprland — em
+*Posição automática* e *atalho global* conhecem o Hyprland e o Sway — em
 qualquer outro ambiente, use o keybind do seu sistema chamando `lyricslens
 toggle` (ver [Uso](#uso)). Ampliar isso é a
 [#12](https://github.com/Julio0Cesar/lyricslens/issues/12); linha em branco na
-tabela é pedido de ajuda, não esquecimento.
+tabela é pedido de ajuda, não esquecimento. Um compositor além desses dois é um
+arquivo novo implementando `Compositor`, não uma mudança no app.
 
 ## Uso
 
@@ -213,7 +218,7 @@ pnpm tauri dev
 ```
 
 ```bash
-cd src-tauri && cargo test    # 111 testes
+cd src-tauri && cargo test    # 119 testes
 pnpm test           # 72 testes
 pnpm exec tsc --noEmit
 ```

@@ -138,6 +138,8 @@ export const ptBR: Dicionario = {
   "error.hotkey.onlyHyprland":
     "atalho automático só em Hyprland — use o keybind do seu compositor",
   "error.hotkey.refused": (atalho, motivo) => `o compositor recusou "${atalho}": ${motivo}`,
+  "error.hotkey.semCompositor":
+    "o atalho automático precisa de um compositor que o app conheça (Hyprland ou Sway) — use o keybind do seu sistema chamando `lyricslens toggle`",
   "error.hotkey.noExecutable": "não descobri o caminho do executável",
   "error.hotkey.compositorFailed": (motivo) => `o compositor não respondeu: ${motivo}`,
   "error.update.notFromScript":

@@ -76,6 +76,8 @@ export function traduzirErro(t: Dicionario, erro: unknown): string {
       return t["error.hotkey.onlyHyprland"];
     case "hotkey.refused":
       return t["error.hotkey.refused"](e.args.atalho ?? "", e.args.motivo ?? "");
+    case "hotkey.semCompositor":
+      return t["error.hotkey.semCompositor"];
     case "hotkey.noExecutable":
       return t["error.hotkey.noExecutable"];
     case "hotkey.compositorFailed":

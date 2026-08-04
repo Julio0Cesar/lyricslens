@@ -106,7 +106,7 @@ fn clear_hotkey(app: &AppHandle) {
         .unwrap()
         .hotkey
         .clone();
-    overlay::hotkey::clear(&atalho);
+    overlay::compositor::atual().limpar_atalho(&atalho);
 }
 
 #[derive(Serialize)]
@@ -173,7 +173,9 @@ fn save_settings(app: AppHandle, mut settings: Settings) -> Result<Settings, i18
         || anterior.margin_bottom != settings.margin_bottom;
 
     if anterior.hotkey != settings.hotkey {
-        if let Err(e) = overlay::hotkey::apply(&anterior.hotkey, &settings.hotkey) {
+        if let Err(e) =
+            overlay::compositor::atual().registrar_atalho(&anterior.hotkey, &settings.hotkey)
+        {
             // Gravar um atalho que o compositor recusou deixaria a UI
             // mostrando uma combinação que não funciona.
             logar!(Erro, "hotkey", "{e}");
@@ -803,7 +805,8 @@ pub fn run() {
             // partida é o que dá permanência sem escrever na config do
             // usuário.
             if !settings.hotkey.is_empty() {
-                if let Err(e) = overlay::hotkey::apply("", &settings.hotkey) {
+                if let Err(e) = overlay::compositor::atual().registrar_atalho("", &settings.hotkey)
+                {
                     // Atalho recusado é resolvível — trocar a combinação — e
                     // invisível de outro jeito: a tecla simplesmente não faz
                     // nada. Ver #14.

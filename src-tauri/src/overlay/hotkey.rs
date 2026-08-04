@@ -10,7 +10,7 @@
 //! reaplica o atalho toda vez que sobe, o que dá o mesmo efeito de permanência
 //! sem mexer na configuração do usuário.
 
-use super::{hyprctl, is_hyprland};
+use super::compositor::hyprland::{hyprctl, is_hyprland};
 use crate::i18n::UiError;
 
 /// O comando que o compositor deve executar ao receber o atalho.
