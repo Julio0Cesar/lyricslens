@@ -11,6 +11,7 @@
 //! sem mexer na configuração do usuário.
 
 use super::{hyprctl, is_hyprland};
+use crate::i18n::UiError;
 
 /// O comando que o compositor deve executar ao receber o atalho.
 ///
@@ -33,9 +34,9 @@ fn comando_toggle() -> Option<String> {
 
 /// Troca o atalho ativo. Os dois lados podem ser vazios: `""` significa
 /// "nenhum atalho".
-pub fn apply(anterior: &str, novo: &str) -> Result<(), String> {
+pub fn apply(anterior: &str, novo: &str) -> Result<(), UiError> {
     if !is_hyprland() {
-        return Err("atalho automático só em Hyprland — use o keybind do seu compositor".into());
+        return Err(UiError::new("hotkey.onlyHyprland"));
     }
 
     if !anterior.trim().is_empty() {
@@ -52,15 +53,18 @@ pub fn apply(anterior: &str, novo: &str) -> Result<(), String> {
     // o toggle várias vezes.
     let _ = hyprctl(&["keyword", "unbind", novo]);
 
-    let comando = comando_toggle().ok_or("não descobri o caminho do executável")?;
-    let saida = hyprctl(&["keyword", "bind", &format!("{novo},exec,{comando}")])?;
+    let comando = comando_toggle().ok_or_else(|| UiError::new("hotkey.noExecutable"))?;
+    let saida = hyprctl(&["keyword", "bind", &format!("{novo},exec,{comando}")])
+        .map_err(|e| UiError::new("hotkey.compositorFailed").arg("motivo", e))?;
 
     // `hyprctl keyword` responde "ok" quando aceita; qualquer outra coisa é
     // uma combinação que o compositor não entendeu.
     if saida.trim().eq_ignore_ascii_case("ok") {
         Ok(())
     } else {
-        Err(format!("o compositor recusou \"{novo}\": {saida}"))
+        Err(UiError::new("hotkey.refused")
+            .arg("atalho", novo)
+            .arg("motivo", saida.trim()))
     }
 }
 

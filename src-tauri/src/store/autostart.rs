@@ -10,6 +10,7 @@
 //! está: se o usuário apagar o arquivo por fora, o app concorda na próxima vez
 //! que olhar.
 
+use crate::i18n::UiError;
 use std::path::PathBuf;
 
 /// Onde o executável está, do ponto de vista de quem vai chamá-lo depois.
@@ -83,30 +84,35 @@ pub fn is_enabled() -> bool {
     arquivo().is_some_and(|p| p.is_file())
 }
 
-pub fn set_enabled(ligar: bool) -> Result<(), String> {
-    let alvo = arquivo().ok_or("não descobri onde fica a sua pasta de configuração")?;
-    let exec = executavel().ok_or("não descobri o caminho do executável")?;
+pub fn set_enabled(ligar: bool) -> Result<(), UiError> {
+    let alvo = arquivo().ok_or_else(|| UiError::new("autostart.noConfigDir"))?;
+    let exec = executavel().ok_or_else(|| UiError::new("autostart.noExecutable"))?;
     aplicar(&alvo, &exec, ligar)
 }
 
 /// O trabalho de verdade, com o destino explícito para poder ser testado sem
 /// mexer no `~/.config` de quem roda os testes.
-fn aplicar(alvo: &std::path::Path, exec: &std::path::Path, ligar: bool) -> Result<(), String> {
+fn aplicar(alvo: &std::path::Path, exec: &std::path::Path, ligar: bool) -> Result<(), UiError> {
     if !ligar {
         // Já não existir não é erro: o que importa é o estado final.
         return match std::fs::remove_file(alvo) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(format!("não consegui remover {}: {e}", alvo.display())),
+            Err(e) => {
+                Err(UiError::new("autostart.remove")
+                    .arg("motivo", format!("{}: {e}", alvo.display())))
+            }
         };
     }
 
     if let Some(pai) = alvo.parent() {
-        std::fs::create_dir_all(pai)
-            .map_err(|e| format!("não consegui criar {}: {e}", pai.display()))?;
+        std::fs::create_dir_all(pai).map_err(|e| {
+            UiError::new("autostart.write").arg("motivo", format!("{}: {e}", pai.display()))
+        })?;
     }
-    std::fs::write(alvo, conteudo(exec))
-        .map_err(|e| format!("não consegui escrever {}: {e}", alvo.display()))
+    std::fs::write(alvo, conteudo(exec)).map_err(|e| {
+        UiError::new("autostart.write").arg("motivo", format!("{}: {e}", alvo.display()))
+    })
 }
 
 #[cfg(test)]

@@ -120,7 +120,7 @@ function App() {
   // Todos os hooks antes de qualquer saída antecipada: o React exige que a
   // ordem e a quantidade sejam iguais em toda renderização, e um `return`
   // no meio derruba o componente inteiro quando as preferências chegam.
-  const { settings } = useSettings();
+  const { settings, t } = useSettings();
   // Sem karaokê e sem barra de progresso, a única coisa que muda na tela é a
   // troca de linha — não há por que reavaliar a posição dez vezes por segundo.
   const passo =
@@ -141,17 +141,17 @@ function App() {
   const temLetraSincronizada = lines.length > 0;
 
   const aviso = !track
-    ? "nada tocando"
+    ? t["overlay.nothingPlaying"]
     : status === "searching"
       ? buscaDemorada
-        ? "procurando a letra…"
+        ? t["overlay.searching"]
         : null
       : status === "notFound"
-        ? "sem letra para esta faixa"
+        ? t["overlay.notFound"]
         : lyrics?.instrumental
-          ? "faixa instrumental"
+          ? t["overlay.instrumental"]
           : status === "found" && !temLetraSincronizada
-            ? "letra sem sincronia"
+            ? t["overlay.unsynced"]
             : null;
 
   return (

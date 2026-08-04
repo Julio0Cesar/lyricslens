@@ -188,12 +188,9 @@ rather than guesswork — the reasoning is in
 | Manual lyrics override | done |
 | Offline mode | [#2](https://github.com/Julio0Cesar/lyricslens/issues/2) |
 | Album art | [#3](https://github.com/Julio0Cesar/lyricslens/issues/3) |
-| English interface | [#11](https://github.com/Julio0Cesar/lyricslens/issues/11) |
+| English interface | done, follows your `LANG` |
 | Lyrics translation | [#1](https://github.com/Julio0Cesar/lyricslens/issues/1) |
 | Windows | [#5](https://github.com/Julio0Cesar/lyricslens/issues/5) |
-
-> The interface is currently in Portuguese only. English is
-> [#11](https://github.com/Julio0Cesar/lyricslens/issues/11).
 
 ## Development
 

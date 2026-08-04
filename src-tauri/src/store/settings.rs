@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::i18n::Language;
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -45,6 +47,9 @@ pub struct Settings {
     /// `"SUPER, L"`. Vazio desliga. Quem registra é o compositor: Wayland não
     /// deixa o app capturar teclas fora da própria janela.
     pub hotkey: String,
+    /// Idioma da interface. `Auto` segue o `LANG` do sistema — quem resolve a
+    /// combinação é o frontend, com a detecção que o backend fornece.
+    pub language: Language,
 
     // ---- geometria ----
     pub width: u32,
@@ -93,6 +98,9 @@ impl Default for Settings {
             // Vazio de propósito: registrar um atalho sem o usuário pedir
             // roubaria uma combinação que ele já usa.
             hotkey: String::new(),
+            // Seguir o sistema é o padrão; forçar um idioma é escolha
+            // explícita de quem quer a interface diferente da sessão.
+            language: Language::Auto,
 
             // Dimensionado para o padrão *real*: três linhas de letra, sem
             // informação de faixa e sem barra de progresso. São ~105px de

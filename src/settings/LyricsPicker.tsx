@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { PASSO_GROSSO_MS, useNowPlaying } from "../media/useNowPlaying";
 import { useLyrics } from "../lyrics/useLyrics";
 import { Section } from "./controls";
+import { traduzirErro, type Dicionario } from "../i18n";
 
 type Candidate = {
   providerId: string;
@@ -15,8 +16,8 @@ type Candidate = {
 
 function duracao(s: number | null): string {
   if (s === null) return "--:--";
-  const t = Math.round(s);
-  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+  const seg = Math.round(s);
+  return `${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, "0")}`;
 }
 
 /**
@@ -31,7 +32,9 @@ type Pinned = {
   synced: boolean;
 };
 
-export default function LyricsPicker() {
+/** O dicionário vem da janela: um `useSettings` a mais aqui só duplicaria a
+ *  assinatura do mesmo estado. */
+export default function LyricsPicker({ t }: { t: Dicionario }) {
   // A janela de configurações não desenha letra, então não precisa da posição
   // fina — só de saber qual faixa está tocando.
   const { track } = useNowPlaying(PASSO_GROSSO_MS);
@@ -74,7 +77,7 @@ export default function LyricsPicker() {
       if (chave === trackKey) setFixada(aplicado);
       await recarregarFixadas();
     } catch (e) {
-      setErro(String(e));
+      setErro(traduzirErro(t, e));
     }
   }
 
@@ -114,30 +117,30 @@ export default function LyricsPicker() {
   }
 
   const resumo = !track
-    ? "nada tocando"
+    ? t["overlay.nothingPlaying"]
     : status === "found" && lyrics?.lines.length
-      ? `${lyrics.lines.length} linhas sincronizadas · ${lyrics.source}`
+      ? t["picker.synced"](lyrics.lines.length, lyrics.source)
       : status === "found" && lyrics?.instrumental
-        ? "instrumental"
+        ? t["picker.instrumental"]
         : status === "found"
-          ? "letra sem sincronia"
+          ? t["picker.unsynced"]
           : status === "notFound"
-            ? "nenhuma letra encontrada"
+            ? t["picker.notFound"]
             : status === "searching"
-              ? "procurando…"
+              ? t["picker.searching"]
               : "—";
 
   return (
-    <Section title="Letra desta faixa">
+    <Section title={t["picker.title"]}>
       <div className="flex items-baseline justify-between gap-3">
         <span className="min-w-0 truncate text-sm text-white/85">
-          {track ? `${track.artist} — ${track.title}` : "nada tocando"}
+          {track ? `${track.artist} — ${track.title}` : t["overlay.nothingPlaying"]}
           {fixada && (
             <span
               className="ml-1.5 text-[11px] text-emerald-400/80"
-              title="guardada para uso offline"
+              title={t["picker.offlineTitle"]}
             >
-              ● offline
+              {t["picker.offlineBadge"]}
             </span>
           )}
         </span>
@@ -146,8 +149,7 @@ export default function LyricsPicker() {
 
       <div className="flex items-center justify-between gap-3">
         <span className="text-[11px] leading-relaxed text-white/35">
-          O cache já evita ir à rede de novo. Manter offline é o passo a mais:
-          esta nunca é descartada.
+          {t["picker.keepExplanation"]}
         </span>
         <button
           onClick={() => trackKey && alternarFixada(trackKey, !fixada)}
@@ -158,7 +160,7 @@ export default function LyricsPicker() {
               : "border-white/15 bg-white/6 text-white/70 hover:bg-white/12"
           }`}
         >
-          {fixada ? "manter offline ✓" : "manter offline"}
+          {fixada ? t["picker.kept"] : t["picker.keep"]}
         </button>
       </div>
 
@@ -166,13 +168,13 @@ export default function LyricsPicker() {
         <input
           value={artist}
           onChange={(e) => setArtist(e.currentTarget.value)}
-          placeholder="artista"
+          placeholder={t["picker.artist"]}
           className="min-w-0 flex-1 rounded border border-white/15 bg-white/5 px-2 py-1 text-[12px] text-white/85 placeholder:text-white/25"
         />
         <input
           value={title}
           onChange={(e) => setTitle(e.currentTarget.value)}
-          placeholder="música"
+          placeholder={t["picker.song"]}
           className="min-w-0 flex-1 rounded border border-white/15 bg-white/5 px-2 py-1 text-[12px] text-white/85 placeholder:text-white/25"
         />
         <button
@@ -180,7 +182,7 @@ export default function LyricsPicker() {
           disabled={buscando || (!artist && !title)}
           className="shrink-0 rounded border border-white/15 bg-white/8 px-3 py-1 text-[12px] text-white/80 hover:bg-white/14 disabled:opacity-40"
         >
-          {buscando ? "…" : "buscar"}
+          {buscando ? "…" : t["picker.search"]}
         </button>
       </div>
 
@@ -189,7 +191,7 @@ export default function LyricsPicker() {
       {candidatos !== null && (
         <div className="flex max-h-72 flex-col gap-1 overflow-y-auto">
           {candidatos.length === 0 && (
-            <p className="text-[12px] text-white/40">nenhum resultado</p>
+            <p className="text-[12px] text-white/40">{t["picker.noResults"]}</p>
           )}
           {candidatos.map((c) => (
             <div
@@ -210,16 +212,16 @@ export default function LyricsPicker() {
                 className={`shrink-0 text-[10px] ${
                   c.hasSynced ? "text-emerald-400/70" : "text-amber-400/60"
                 }`}
-                title={c.hasSynced ? "sincronizada" : "sem sincronia"}
+                title={c.hasSynced ? t["picker.hasSyncTitle"] : t["picker.noSyncTitle"]}
               >
-                {c.hasSynced ? "sync" : "texto"}
+                {c.hasSynced ? t["picker.hasSync"] : t["picker.noSync"]}
               </span>
               <button
                 onClick={() => usar(c)}
                 disabled={aplicando !== null || !track}
                 className="shrink-0 rounded border border-white/15 bg-white/8 px-2 py-0.5 text-[11px] text-white/80 hover:bg-white/14 disabled:opacity-40"
               >
-                {aplicando === c.providerId ? "…" : "usar"}
+                {aplicando === c.providerId ? "…" : t["picker.use"]}
               </button>
             </div>
           ))}
@@ -227,14 +229,13 @@ export default function LyricsPicker() {
       )}
 
       <p className="text-[11px] leading-relaxed text-white/30">
-        A escolha fica guardada para esta faixa — da próxima vez que ela tocar, a letra já vem
-        certa sem passar por aqui.
+        {t["picker.choiceExplanation"]}
       </p>
 
       {fixadas.length > 0 && (
         <div className="flex flex-col gap-1 border-t border-white/8 pt-3">
           <div className="flex items-baseline justify-between">
-            <span className="text-[12px] text-white/70">Guardadas offline</span>
+            <span className="text-[12px] text-white/70">{t["picker.pinnedTitle"]}</span>
             <span className="text-[11px] text-white/35">{fixadas.length}</span>
           </div>
           <div className="flex max-h-40 flex-col gap-1 overflow-y-auto">
@@ -251,15 +252,15 @@ export default function LyricsPicker() {
                   className={`shrink-0 text-[10px] ${
                     p.synced ? "text-emerald-400/60" : "text-amber-400/50"
                   }`}
-                  title={p.synced ? "sincronizada" : "sem sincronia"}
+                  title={p.synced ? t["picker.hasSyncTitle"] : t["picker.noSyncTitle"]}
                 >
-                  {p.synced ? "sync" : "texto"}
+                  {p.synced ? t["picker.hasSync"] : t["picker.noSync"]}
                 </span>
                 <button
                   onClick={() => alternarFixada(p.trackKey, false)}
                   className="shrink-0 rounded border border-white/15 bg-white/8 px-2 py-0.5 text-[11px] text-white/70 hover:bg-white/14"
                 >
-                  soltar
+                  {t["picker.release"]}
                 </button>
               </div>
             ))}
