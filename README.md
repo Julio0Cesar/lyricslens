@@ -151,6 +151,20 @@ lyricslens hide
 lyricslens            # show
 ```
 
+### Reporting a problem
+
+A desktop app launched from the menu has no visible stderr, so failures are
+written to a log file instead. These two answer most of what a bug report needs:
+
+```bash
+lyricslens --version
+lyricslens --paths     # where the log, cache and preferences live
+```
+
+The log lives in `~/.local/state/lyricslens/`, rotates at 1 MiB and keeps one
+previous file. Failures you can act on — a hotkey the compositor refused, a
+lyrics lookup that never reached LRCLIB — also show up in the settings window.
+
 ## How it works
 
 ```

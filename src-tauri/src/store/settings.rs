@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::i18n::Language;
+use crate::log::logar;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -154,7 +155,7 @@ impl SettingsStore {
             .and_then(|raw| match serde_json::from_str::<Settings>(&raw) {
                 Ok(s) => Some(s),
                 Err(e) => {
-                    eprintln!("[settings] arquivo ilegível, usando padrões: {e}");
+                    logar!(Aviso, "settings", "arquivo ilegível, usando padrões: {e}");
                     None
                 }
             })

@@ -11,6 +11,7 @@ pub mod layer_shell;
 use std::sync::OnceLock;
 use std::time::Duration;
 
+use crate::log::logar;
 use serde::Serialize;
 use tauri::{LogicalPosition, LogicalSize, Manager, WebviewWindow};
 
@@ -118,7 +119,7 @@ fn dialeto() -> Dialeto {
         } else {
             Dialeto::Legado
         };
-        eprintln!("[overlay] hyprctl no dialeto {d:?}");
+        logar!(Info, "overlay", "hyprctl no dialeto {d:?}");
         d
     })
 }
@@ -352,9 +353,12 @@ fn posicao_desejada(window: &WebviewWindow, geo: Geometry) -> Option<(i32, i32)>
         if posicao_visivel(&monitores, xy, geo.width, geo.height) {
             return Some(xy);
         }
-        eprintln!(
-            "[overlay] a posição guardada ({}, {}) não cai em nenhum monitor — recentralizando",
-            xy.0, xy.1
+        logar!(
+            Aviso,
+            "overlay",
+            "a posição guardada ({}, {}) não cai em nenhum monitor — recentralizando",
+            xy.0,
+            xy.1
         );
     }
 
@@ -391,13 +395,17 @@ pub async fn apply_rules_when_mapped(window: WebviewWindow, geo: Geometry) {
     for _ in 0..25 {
         if hyprctl(&["clients"]).is_ok_and(|s| s.contains("LyricsLens Overlay")) {
             if let Err(e) = apply_rules(&window, geo) {
-                eprintln!("[overlay] regras do compositor falharam: {e}");
+                logar!(Aviso, "overlay", "regras do compositor falharam: {e}");
             }
             return;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    eprintln!("[overlay] a janela não apareceu no compositor a tempo");
+    logar!(
+        Aviso,
+        "overlay",
+        "a janela não apareceu no compositor a tempo"
+    );
 }
 
 /// Fontes instaladas no sistema, para o seletor de fonte.
@@ -441,7 +449,7 @@ pub fn open_settings(app: &tauri::AppHandle) {
         let _ = window.set_focus();
         return;
     }
-    eprintln!("[overlay] janela de configurações não encontrada");
+    logar!(Aviso, "overlay", "janela de configurações não encontrada");
 }
 
 pub fn close_settings(app: &tauri::AppHandle) {
