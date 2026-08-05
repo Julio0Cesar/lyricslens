@@ -236,6 +236,7 @@ rather than guesswork — the reasoning is in
 | Tray + global hotkey | done |
 | Local cache (SQLite) | done |
 | Settings window | done |
+| APT and YUM repository | done, at [julio0cesar.github.io/lyricslens](https://julio0cesar.github.io/lyricslens/) |
 | Manual lyrics override | done |
 | Offline mode | [#2](https://github.com/Julio0Cesar/lyricslens/issues/2) |
 | Album art | done, from the player or Deezer |
@@ -251,8 +252,8 @@ pnpm tauri dev
 ```
 
 ```bash
-cd src-tauri && cargo test    # 119 tests
-pnpm test           # 72 tests
+cd src-tauri && cargo test    # 134 tests
+pnpm test           # 77 tests
 pnpm exec tsc --noEmit
 ```
 
