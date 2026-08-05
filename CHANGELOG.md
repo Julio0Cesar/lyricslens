@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.10.2...v0.11.0) (2026-08-05)
+
+
+### Funcionalidades
+
+* **release:** repositório APT e YUM publicado no GitHub Pages ([#88](https://github.com/Julio0Cesar/lyricslens/issues/88)) ([2c2ff5b](https://github.com/Julio0Cesar/lyricslens/commit/2c2ff5b6becd3861a17e6d9096aae1b9a538b280))
+
 ## [0.10.2](https://github.com/Julio0Cesar/lyricslens/compare/v0.10.1...v0.10.2) (2026-08-05)
 
 
