@@ -42,15 +42,19 @@ pub(crate) fn hyprctl(args: &[&str]) -> Result<String, String> {
 /// lia só o stdout e não checava o conteúdo, ele seguia achando que tinha dado
 /// certo: o resultado é o overlay parar de flutuar, de ser fixado e de assumir
 /// tamanho e posição, em silêncio, depois de uma atualização do compositor.
+///
+/// O mesmo corte vale para os atalhos: o `keyword` inteiro deixou de existir na
+/// 0.55, e não só para `bind` — `hyprctl keyword` de qualquer coisa responde
+/// *"keyword can't work with non-legacy parsers. Use eval."*. Ver #41.
 #[derive(Clone, Copy, PartialEq, Debug)]
-enum Dialeto {
+pub(crate) enum Dialeto {
     /// `dispatch setfloating title:^(...)$`
     Legado,
     /// `dispatch hl.dsp.window.float{ window = hl.get_window("...") }`
     Lua,
 }
 
-fn dialeto() -> Dialeto {
+pub(crate) fn dialeto() -> Dialeto {
     static CACHE: OnceLock<Dialeto> = OnceLock::new();
     *CACHE.get_or_init(|| {
         // Sonda sem efeito colateral nos dois lados: o seletor não casa com
