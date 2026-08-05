@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.2](https://github.com/Julio0Cesar/lyricslens/compare/v0.10.1...v0.10.2) (2026-08-05)
+
+
+### Correções
+
+* **overlay:** tamanho inicial da janela igual ao padrão das preferências ([#82](https://github.com/Julio0Cesar/lyricslens/issues/82)) ([121aaee](https://github.com/Julio0Cesar/lyricslens/commit/121aaeeed7e05fc5115f745f4afd5d3bbd63cf46))
+
 ## [0.10.1](https://github.com/Julio0Cesar/lyricslens/compare/v0.10.0...v0.10.1) (2026-08-04)
 
 
