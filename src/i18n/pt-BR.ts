@@ -43,6 +43,8 @@ export const ptBR: Dicionario = {
   "backgroundOpacity.label": "Opacidade do fundo",
   "backgroundOpacity.hint": "0 deixa o fundo invisível — o desfoque atrás vem do compositor",
   "cornerRadius.label": "Arredondamento",
+  "blur.label": "Desfoque atrás",
+  "blur.hint": "borra o que está atrás do overlay · quem borra é o compositor",
 
   // ---- conteúdo ----
   "contextLines.label": "Linhas de contexto",
