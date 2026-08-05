@@ -42,6 +42,7 @@ export type Settings = {
   marginBottom: number;
   positionX: number | null;
   positionY: number | null;
+  layerMarginLeft: number | null;
   layerShell: boolean;
 };
 

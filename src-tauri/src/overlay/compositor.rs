@@ -59,6 +59,20 @@ pub trait Compositor: Send + Sync {
     /// O compositor já conhece a janela? As regras só pegam depois disso.
     fn janela_conhecida(&self) -> bool;
 
+    /// Onde o ponteiro está, em coordenada global.
+    ///
+    /// Wayland não conta isso ao cliente: uma janela só recebe posição relativa
+    /// à própria superfície. Isso basta para clicar, e não basta para arrastar
+    /// uma camada — quando a superfície se move, a coordenada relativa muda
+    /// sozinha, e não há como distinguir "o cursor andou" de "a camada andou".
+    /// Deduzir pela diferença faz a camada disparar na frente do cursor.
+    ///
+    /// Quem sabe a verdade é o compositor. `None` quando ele não conta, e aí o
+    /// arraste da camada não é oferecido. Ver #35.
+    fn posicao_do_cursor(&self) -> Option<(i32, i32)> {
+        None
+    }
+
     /// Este compositor sabe ligar e desligar o desfoque atrás do overlay?
     ///
     /// Separado do `definir_desfoque` porque a interface precisa saber disso
