@@ -127,6 +127,10 @@ jobs:
           dpkg-scanpackages --multiversion . > Packages
           gzip -9kf Packages
 
+          # Escrito fora do diretório e movido depois: redirecionar direto para
+          # `./Release` cria o arquivo antes de o `apt-ftparchive` varrer a
+          # pasta, e ele acaba listando a soma do próprio Release — que nunca
+          # vai bater, porque a soma é calculada enquanto o arquivo cresce.
           apt-ftparchive \
             -o APT::FTPArchive::Release::Origin=LyricsLens \
             -o APT::FTPArchive::Release::Label=LyricsLens \
@@ -134,7 +138,8 @@ jobs:
             -o APT::FTPArchive::Release::Architectures=amd64 \
             -o APT::FTPArchive::Release::Components=main \
             -o APT::FTPArchive::Release::Description="Letras sincronizadas sobre o que estiver na tela" \
-            release . > Release
+            release . > "$RUNNER_TEMP/Release"
+          mv "$RUNNER_TEMP/Release" Release
 
           # As duas formas: `InRelease` é o índice com a assinatura embutida e é
           # o que o apt moderno busca primeiro; `Release.gpg` é a assinatura
@@ -197,13 +202,20 @@ jobs:
           # assinatura correta. O que importa aqui é que o cabeçalho de
           # assinatura exista; conferir contra a chave é o trabalho da máquina
           # de quem instala, e é para isso que o `.repo` traz o `gpgkey`.
+          #
+          # As duas etiquetas porque são dois formatos: `SIGPGP` é a assinatura
+          # V3, do pacote inteiro; `RSAHEADER` é a V4, do cabeçalho, que é o que
+          # o rpm moderno produz. Consultar só a primeira dá `(none)` num pacote
+          # perfeitamente assinado.
           for r in site/rpm/*.rpm; do
-            assinatura=$(rpm -qp --qf '%{SIGPGP:pgpsig}' "$r" 2>/dev/null)
-            if [ -z "$assinatura" ] || [ "$assinatura" = "(none)" ]; then
-              echo "::error::$r saiu sem assinatura"
-              exit 1
-            fi
-            echo "  $(basename "$r"): $assinatura"
+            assinatura=$(rpm -qp --qf '%{RSAHEADER:pgpsig}%{SIGPGP:pgpsig}' "$r" 2>/dev/null)
+            case "$assinatura" in
+              *"Key ID"*) echo "  $(basename "$r"): $assinatura" ;;
+              *)
+                echo "::error::$r saiu sem assinatura (etiquetas: $assinatura)"
+                exit 1
+                ;;
+            esac
           done
 
       - name: Chave pública e página de instruções
