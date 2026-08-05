@@ -154,12 +154,17 @@ jobs:
           # O rpm precisa da senha por um comando próprio: ele chama o gpg sem
           # saber de pinentry, e sem isto a assinatura trava esperando um
           # terminal que não existe no runner.
-          cat > ~/.rpmmacros <<MACROS
-          %_signature gpg
-          %_gpg_path $HOME/.gnupg
-          %_gpg_name $IMPRESSAO
-          %__gpg_sign_cmd %{__gpg} gpg --batch --yes --pinentry-mode loopback --passphrase-file $HOME/.gnupg/passphrase --no-armor --no-secmem-warning -u "%{_gpg_name}" -sbo %{__signature_filename} %{__plaintext_filename}
-          MACROS
+          #
+          # Escrito linha a linha em vez de por heredoc: dentro de um bloco YAML
+          # o heredoc carrega a indentação junto, e macro do rpm com espaço na
+          # frente não é lida.
+          {
+            echo "%_signature gpg"
+            echo "%_gpg_path $HOME/.gnupg"
+            echo "%_gpg_name $IMPRESSAO"
+            echo "%__gpg_sign_cmd %{__gpg} gpg --batch --yes --pinentry-mode loopback --passphrase-file $HOME/.gnupg/passphrase --no-armor --no-secmem-warning -u \"%{_gpg_name}\" -sbo %{__signature_filename} %{__plaintext_filename}"
+          } > ~/.rpmmacros
+          cat ~/.rpmmacros
 
           for rpm in pacotes/*/lyricslens-x86_64.rpm; do
             nome=$(rpm -qp --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}.rpm' "$rpm" 2>/dev/null)
@@ -180,14 +185,26 @@ jobs:
       - name: Conferir as assinaturas antes de publicar
         run: |
           set -euo pipefail
+          # Um repositório que o apt recusaria é pior que repositório nenhum:
+          # falha na cara do usuário no meio de um `apt update`, num arquivo que
+          # ele não sabe de onde veio.
           gpg --verify site/apt/InRelease
           gpg --verify site/apt/Release.gpg site/apt/Release
           gpg --verify site/rpm/repodata/repomd.xml.asc site/rpm/repodata/repomd.xml
 
-          # Um repositório que o apt recusaria é pior que repositório nenhum:
-          # falha na cara do usuário no meio de um `apt update`, num arquivo que
-          # ele não sabe de onde veio.
-          rpm --checksig site/rpm/*.rpm
+          # `rpm --checksig` compara com o chaveiro do rpm, que é outro e está
+          # vazio no runner — ele reclamaria de chave faltando mesmo com a
+          # assinatura correta. O que importa aqui é que o cabeçalho de
+          # assinatura exista; conferir contra a chave é o trabalho da máquina
+          # de quem instala, e é para isso que o `.repo` traz o `gpgkey`.
+          for r in site/rpm/*.rpm; do
+            assinatura=$(rpm -qp --qf '%{SIGPGP:pgpsig}' "$r" 2>/dev/null)
+            if [ -z "$assinatura" ] || [ "$assinatura" = "(none)" ]; then
+              echo "::error::$r saiu sem assinatura"
+              exit 1
+            fi
+            echo "  $(basename "$r"): $assinatura"
+          done
 
       - name: Chave pública e página de instruções
         run: |
