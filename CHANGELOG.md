@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/Julio0Cesar/lyricslens/compare/v0.11.0...v0.11.1) (2026-08-05)
+
+
+### Correções
+
+* **release:** conferir a assinatura do RPM na etiqueta certa ([#91](https://github.com/Julio0Cesar/lyricslens/issues/91)) ([1de2f26](https://github.com/Julio0Cesar/lyricslens/commit/1de2f26ae18643592c128d2def9266c857124182))
+
 ## [0.11.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.10.2...v0.11.0) (2026-08-05)
 
 
