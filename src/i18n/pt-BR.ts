@@ -86,7 +86,7 @@ export const ptBR: Dicionario = {
   "position.center": "centralizar",
   "layerShell.label": "Camada do compositor",
   "layerShell.hint":
-    "fica acima até de tela cheia, mas deixa de ser arrastável · exige reiniciar o app",
+    "fica acima até de tela cheia · exige reiniciar o app",
   "layerShell.inactive": (motivo) => `ligada, mas sem efeito nesta sessão — ${motivo}`,
   "layerShell.unavailable": "indisponível",
   "reapply.hint": "reaplica flutuar, fixar, tamanho e posição",

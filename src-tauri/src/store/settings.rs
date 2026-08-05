@@ -61,6 +61,17 @@ pub struct Settings {
     /// Onde o usuário largou a janela. `None` = rodapé central automático.
     pub position_x: Option<i32>,
     pub position_y: Option<i32>,
+    /// Margem esquerda da camada, quando o usuário arrastou. `None` = o
+    /// compositor centraliza.
+    ///
+    /// Não reaproveita `position_x` porque as duas coisas não são a mesma: ali
+    /// é coordenada absoluta atravessando todos os monitores, aqui é distância
+    /// da borda esquerda do monitor onde a camada está. Num monitor só os
+    /// números coincidem, e foi por isso que a tentação existiu; com dois eles
+    /// divergem, e trocar de modo jogaria a camada para o lugar errado. A
+    /// margem inferior não precisa de campo novo: já é o `margin_bottom` que o
+    /// usuário controla pelo cursor nas preferências. Ver #35.
+    pub layer_margin_left: Option<i32>,
     /// Overlay como camada do compositor: fica acima até de tela cheia.
     /// Só tem efeito ao iniciar o app — o tipo da superfície é definido
     /// antes de a janela existir e não pode ser trocado depois.
@@ -122,6 +133,7 @@ impl Default for Settings {
             margin_bottom: 80,
             position_x: None,
             position_y: None,
+            layer_margin_left: None,
             layer_shell: false,
         }
     }
