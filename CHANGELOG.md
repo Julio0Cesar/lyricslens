@@ -5,7 +5,14 @@
 
 ### Funcionalidades
 
+* **overlay:** arrastar o overlay também no modo camada, inclusive entre monitores ([#35](https://github.com/Julio0Cesar/lyricslens/issues/35)) ([2435b45](https://github.com/Julio0Cesar/lyricslens/commit/2435b45))
+* **overlay:** controle de desfoque do que está atrás ([#18](https://github.com/Julio0Cesar/lyricslens/issues/18)) ([2435b45](https://github.com/Julio0Cesar/lyricslens/commit/2435b45))
 * **release:** repositório APT e YUM publicado no GitHub Pages ([#88](https://github.com/Julio0Cesar/lyricslens/issues/88)) ([2c2ff5b](https://github.com/Julio0Cesar/lyricslens/commit/2c2ff5b6becd3861a17e6d9096aae1b9a538b280))
+
+
+### Correções
+
+* **atalho:** registrar o atalho global no Hyprland 0.55+ ([#41](https://github.com/Julio0Cesar/lyricslens/issues/41)) ([2435b45](https://github.com/Julio0Cesar/lyricslens/commit/2435b45))
 
 ## [0.10.2](https://github.com/Julio0Cesar/lyricslens/compare/v0.10.1...v0.10.2) (2026-08-05)
 

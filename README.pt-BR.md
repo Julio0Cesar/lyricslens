@@ -236,6 +236,7 @@ palpite — o raciocínio está em [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md
 | Bandeja + atalho global | pronto |
 | Cache local (SQLite) | pronto |
 | Janela de configurações | pronto |
+| Repositório APT e YUM | pronto, em [julio0cesar.github.io/lyricslens](https://julio0cesar.github.io/lyricslens/) |
 | Escolha manual da letra | pronto |
 | Modo offline | [#2](https://github.com/Julio0Cesar/lyricslens/issues/2) |
 | Capa do álbum | pronto, do player ou do Deezer |
@@ -251,8 +252,8 @@ pnpm tauri dev
 ```
 
 ```bash
-cd src-tauri && cargo test    # 119 testes
-pnpm test           # 72 testes
+cd src-tauri && cargo test    # 134 testes
+pnpm test           # 77 testes
 pnpm exec tsc --noEmit
 ```
 
