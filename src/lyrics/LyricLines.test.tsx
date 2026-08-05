@@ -38,6 +38,7 @@ const PREFERENCIAS: Settings = {
   marginBottom: 80,
   positionX: null,
   positionY: null,
+  layerMarginLeft: null,
   layerShell: false,
 };
 

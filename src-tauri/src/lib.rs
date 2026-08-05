@@ -293,6 +293,52 @@ fn remember_overlay_position(app: AppHandle) -> Option<(i32, i32)> {
     Some((x, y))
 }
 
+/// Começa o arraste da camada. `false` quando não dá — e aí o frontend nem
+/// tenta, em vez de arrastar torto.
+///
+/// O frontend não manda coordenada nenhuma em nenhum destes três: quem sabe
+/// onde o ponteiro está é o compositor, e a página só sabe a posição relativa à
+/// própria superfície — que se move junto com o arraste. Ver #35.
+#[tauri::command]
+fn layer_drag_start(app: AppHandle, window: tauri::WebviewWindow) -> bool {
+    overlay::comecar_arraste(&window, geometry(&app))
+}
+
+/// Move a camada para onde o cursor está. Não toca no disco: gravar a cada
+/// quadro castigaria o SSD por uma posição que só interessa quando soltar.
+#[tauri::command]
+fn layer_drag_move(app: AppHandle, window: tauri::WebviewWindow) {
+    overlay::arrastar_camada(&window, geometry(&app));
+}
+
+/// Guarda onde o usuário largou a camada.
+#[tauri::command]
+fn layer_drag_end(app: AppHandle, window: tauri::WebviewWindow) {
+    let Some(((left, bottom), _)) = overlay::arrastar_camada(&window, geometry(&app)) else {
+        overlay::terminar_arraste();
+        return;
+    };
+    overlay::terminar_arraste();
+
+    let state = app.state::<AppState>();
+    let mut settings = state.settings.lock().unwrap();
+    if settings.layer_margin_left == Some(left) && settings.margin_bottom == bottom.max(0) as u32 {
+        return;
+    }
+
+    settings.layer_margin_left = Some(left);
+    // A margem inferior não ganha campo próprio: ela já é a preferência que o
+    // usuário mexe pelo cursor nas configurações, e arrastar a camada para
+    // cima é a mesma coisa que aumentar aquele número. Ver o campo no
+    // `store::Settings`.
+    settings.margin_bottom = bottom.max(0) as u32;
+    let _ = state.settings_store.save(&settings);
+    let copia = settings.clone();
+    drop(settings);
+
+    let _ = app.emit("settings", &copia);
+}
+
 /// Devolve o overlay ao rodapé central.
 #[tauri::command]
 fn center_overlay(app: AppHandle) -> Result<(), i18n::UiError> {
@@ -301,6 +347,10 @@ fn center_overlay(app: AppHandle) -> Result<(), i18n::UiError> {
         let mut settings = state.settings.lock().unwrap();
         settings.position_x = None;
         settings.position_y = None;
+        // A camada volta a ser centralizada pelo compositor. A margem inferior
+        // fica: ela é escolha explícita do usuário nas preferências, não um
+        // resíduo do arraste.
+        settings.layer_margin_left = None;
         let _ = state.settings_store.save(&settings);
         let copia = settings.clone();
         drop(settings);
@@ -745,6 +795,9 @@ pub fn run() {
             check_update,
             apply_update,
             remember_overlay_position,
+            layer_drag_start,
+            layer_drag_move,
+            layer_drag_end,
             center_overlay,
             get_settings,
             save_settings,

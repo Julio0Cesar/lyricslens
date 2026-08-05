@@ -177,6 +177,12 @@ fn definir_desfoque(atras: bool) -> Result<(), String> {
     ])?)
 }
 
+/// `"607, 881"` → `(607, 881)`.
+fn ler_cursorpos(saida: &str) -> Option<(i32, i32)> {
+    let (x, y) = saida.split_once(',')?;
+    Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
+}
+
 fn cliente_overlay() -> Option<serde_json::Value> {
     let json = hyprctl(&["-j", "clients"]).ok()?;
     let clients: serde_json::Value = serde_json::from_str(&json).ok()?;
@@ -187,19 +193,55 @@ fn cliente_overlay() -> Option<serde_json::Value> {
         .cloned()
 }
 
+/// O nome do monitor onde a **camada** do overlay está.
+///
+/// Uma layer surface não aparece em `hyprctl clients`: aquilo lista janelas, e
+/// camada não é janela. Sem isto o modo camada não tinha monitor conhecido, e
+/// quem perguntava recebia `None` — o que fez o limite do arraste cair no ramo
+/// "sem teto" e deixou a camada escapar da tela, de onde não há como trazê-la
+/// de volta. Ver #35.
+fn monitor_da_camada() -> Option<String> {
+    let json = hyprctl(&["-j", "layers"]).ok()?;
+    let layers: serde_json::Value = serde_json::from_str(&json).ok()?;
+
+    layers.as_object()?.iter().find_map(|(monitor, dados)| {
+        let tem = dados
+            .get("levels")?
+            .as_object()?
+            .values()
+            .filter_map(|nivel| nivel.as_array())
+            .flatten()
+            .any(|l| l.get("namespace").and_then(|n| n.as_str()) == Some(NAMESPACE));
+        tem.then(|| monitor.clone())
+    })
+}
+
 /// Geometria `(x, y, largura, altura)` do monitor onde o overlay está.
+///
+/// Pergunta pelos dois caminhos porque o overlay pode ser das duas naturezas:
+/// janela comum, que está em `clients`, ou camada, que está em `layers`.
 fn monitor_do_overlay() -> Option<(i32, i32, i32, i32)> {
     if !is_hyprland() {
         return None;
     }
-    let id = cliente_overlay()?.get("monitor")?.as_i64()?;
+
+    let id = cliente_overlay().and_then(|c| c.get("monitor")?.as_i64());
+    let nome = if id.is_none() {
+        monitor_da_camada()
+    } else {
+        None
+    };
+    if id.is_none() && nome.is_none() {
+        return None;
+    }
 
     let json = hyprctl(&["-j", "monitors"]).ok()?;
     let monitors: serde_json::Value = serde_json::from_str(&json).ok()?;
-    let m = monitors
-        .as_array()?
-        .iter()
-        .find(|m| m.get("id").and_then(|i| i.as_i64()) == Some(id))?;
+    let m = monitors.as_array()?.iter().find(|m| match (id, &nome) {
+        (Some(id), _) => m.get("id").and_then(|i| i.as_i64()) == Some(id),
+        (None, Some(nome)) => m.get("name").and_then(|n| n.as_str()) == Some(nome.as_str()),
+        _ => false,
+    })?;
 
     Some((
         m.get("x")?.as_i64()? as i32,
@@ -279,6 +321,10 @@ impl Compositor for Hyprland {
         hyprctl(&["clients"]).is_ok_and(|s| s.contains(TITULO))
     }
 
+    fn posicao_do_cursor(&self) -> Option<(i32, i32)> {
+        ler_cursorpos(&hyprctl(&["cursorpos"]).ok()?)
+    }
+
     /// Só pela API Lua. No dialeto legado a única sintaxe aceita já era a
     /// descontinuada, e desfazer uma regra individual exigiria `hyprctl
     /// reload` — recarregar a configuração inteira da sessão do usuário por
@@ -301,5 +347,28 @@ impl Compositor for Hyprland {
 
     fn limpar_atalho(&self, atalho: &str) {
         hotkey::clear(atalho);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn le_a_posicao_do_cursor() {
+        assert_eq!(ler_cursorpos("607, 881"), Some((607, 881)));
+        assert_eq!(ler_cursorpos("0,0"), Some((0, 0)));
+        // Segundo monitor: a coordenada é global e atravessa os dois.
+        assert_eq!(ler_cursorpos("2516, 661"), Some((2516, 661)));
+    }
+
+    /// O `hyprctl` pode responder erro em vez de coordenada. Um `unwrap` aqui
+    /// derrubaria o app no meio de um arraste.
+    #[test]
+    fn resposta_que_nao_e_coordenada_nao_vira_posicao() {
+        assert_eq!(ler_cursorpos(""), None);
+        assert_eq!(ler_cursorpos("error: unknown request"), None);
+        assert_eq!(ler_cursorpos("607"), None);
+        assert_eq!(ler_cursorpos("a, b"), None);
     }
 }
