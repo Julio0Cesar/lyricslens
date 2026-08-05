@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/Julio0Cesar/lyricslens/compare/v0.11.1...v0.12.0) (2026-08-05)
+
+
+### Funcionalidades
+
+* **readme:** GIF do overlay em funcionamento, e instalador que fala inglês ([#94](https://github.com/Julio0Cesar/lyricslens/issues/94)) ([9e1bfa2](https://github.com/Julio0Cesar/lyricslens/commit/9e1bfa2492411bcf34215ecb7b2f114ce36da203))
+
 ## [0.11.1](https://github.com/Julio0Cesar/lyricslens/compare/v0.11.0...v0.11.1) (2026-08-05)
 
 
