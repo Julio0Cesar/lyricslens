@@ -42,6 +42,7 @@ export type Settings = {
   marginBottom: number;
   positionX: number | null;
   positionY: number | null;
+  layerMarginLeft: number | null;
   layerShell: boolean;
 };
 
@@ -55,6 +56,8 @@ export type OverlayStatus = {
   layerShellActive: boolean;
   /** Por que os dois diferem. `null` quando não diferem. */
   layerShellFallback: string | null;
+  /** O compositor sabe ligar e desligar o desfoque atrás do overlay. */
+  blurAvailable: boolean;
 };
 
 /**

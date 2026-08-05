@@ -47,6 +47,8 @@ export const en = {
   "backgroundOpacity.hint":
     "0 makes the background invisible — the blur behind it comes from the compositor",
   "cornerRadius.label": "Corner radius",
+  "blur.label": "Blur behind",
+  "blur.hint": "blurs what is behind the overlay · the compositor does the blurring",
 
   // ---- conteúdo ----
   "contextLines.label": "Context lines",
@@ -88,7 +90,7 @@ export const en = {
   "position.center": "centre it",
   "layerShell.label": "Compositor layer",
   "layerShell.hint":
-    "stays above even fullscreen, but stops being draggable · needs an app restart",
+    "stays above even fullscreen · needs an app restart",
   "layerShell.inactive": (motivo: string) => `on, but with no effect this session — ${motivo}`,
   "layerShell.unavailable": "unavailable",
   "reapply.hint": "reapplies floating, pinning, size and position",

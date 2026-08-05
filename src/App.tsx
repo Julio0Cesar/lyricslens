@@ -74,7 +74,70 @@ function useAtraso(ativo: boolean, ms: number): boolean {
  * Em Wayland a janela também não sabe onde está e soltar não avisa ninguém;
  * ao recuperar o foco, perguntamos ao compositor e guardamos.
  */
-function useArrastar() {
+/** Antes disto o ponteiro ainda está parado o bastante para ser um clique. */
+const LIMIAR_ARRASTE_PX = 4;
+
+/**
+ * Arraste no modo camada.
+ *
+ * Numa layer surface o cliente nunca pede "mover janela" ao compositor: quem
+ * decide onde ela fica são as âncoras e as margens da própria superfície. Era
+ * essa a razão de o modo camada não ser arrastável — não uma limitação do
+ * protocolo, só código que faltava. Ver #35.
+ *
+ * Não há conta nenhuma aqui, de propósito. A primeira versão fazia a conta
+ * nesta camada, a partir de `clientX`/`clientY`, e não podia dar certo: essas
+ * coordenadas são relativas à superfície, e a superfície é justamente o que se
+ * move. Quando a camada alcança o cursor, o cursor volta ao ponto agarrado e o
+ * deslocamento medido zera — e todo evento que chegue antes de o compositor
+ * redesenhar conta o mesmo deslocamento outra vez. Na prática a camada tremia e
+ * disparava para longe do cursor.
+ *
+ * Quem sabe onde o ponteiro está de verdade, em coordenada global, é o
+ * compositor. Então o backend pergunta a ele, e o frontend só diz quando o
+ * arraste começa, continua e termina. É essa coordenada global que também
+ * permite atravessar monitores: uma layer surface pertence a um output, e sem
+ * saber que o cursor cruzou a borda não há como pedir a troca.
+ */
+function arrastarCamada(origem: { x: number; y: number }) {
+  let ativo = false;
+  let emVoo = false;
+
+  const mover = (m: MouseEvent) => {
+    if (!ativo) {
+      if (Math.hypot(m.clientX - origem.x, m.clientY - origem.y) < LIMIAR_ARRASTE_PX)
+        return;
+      ativo = true;
+      invoke<boolean>("layer_drag_start").then((pode) => {
+        // Compositor que não conta onde o cursor está: melhor não arrastar do
+        // que arrastar torto.
+        if (!pode) soltar();
+      });
+      return;
+    }
+    // Um pedido por vez. O backend lê o cursor do compositor a cada chamada,
+    // então pedidos empilhados só repetiriam trabalho — e cada leitura custa um
+    // processo.
+    if (emVoo) return;
+    emVoo = true;
+    invoke("layer_drag_move")
+      .catch(() => {})
+      .finally(() => {
+        emVoo = false;
+      });
+  };
+
+  const soltar = () => {
+    window.removeEventListener("mousemove", mover);
+    window.removeEventListener("mouseup", soltar);
+    if (ativo) invoke("layer_drag_end").catch(() => {});
+  };
+
+  window.addEventListener("mousemove", mover);
+  window.addEventListener("mouseup", soltar);
+}
+
+function useArrastar(layerShell: boolean) {
   // Só depois de um arraste de verdade a posição do compositor representa uma
   // escolha do usuário. Antes isto gravava a cada `focus`, o que inclui o foco
   // que a janela ganha ao abrir — e aí o app salvava por cima da preferência
@@ -99,8 +162,16 @@ function useArrastar() {
 
     const origem = { x: e.clientX, y: e.clientY };
 
+    // A camada não passa pelo compositor: quem a move é o próprio app, pelas
+    // margens da superfície.
+    if (layerShell) {
+      arrastarCamada(origem);
+      return;
+    }
+
     const mover = (m: MouseEvent) => {
-      if (Math.hypot(m.clientX - origem.x, m.clientY - origem.y) < 4) return;
+      if (Math.hypot(m.clientX - origem.x, m.clientY - origem.y) < LIMIAR_ARRASTE_PX)
+        return;
       limpar();
       // Marca antes de arrastar: a partir daqui o ponteiro é do compositor e o
       // próximo `focus` é a soltura, que é quando vale guardar a posição.
@@ -133,7 +204,7 @@ function App() {
   const { status, lyrics, trackKey } = useLyrics(identity);
   const capa = useCover(trackKey);
   const buscaDemorada = useAtraso(status === "searching", 700);
-  const iniciarArraste = useArrastar();
+  const iniciarArraste = useArrastar(settings?.layerShell ?? false);
 
   if (!settings) return null;
 

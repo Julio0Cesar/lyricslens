@@ -20,6 +20,13 @@ pub mod sway;
 /// Como a janela do overlay é identificada em qualquer compositor.
 pub const TITULO: &str = "LyricsLens Overlay";
 
+/// Como a **camada** do overlay é identificada.
+///
+/// Título não serve aqui: uma layer surface não tem título, e nem aparece na
+/// lista de janelas do compositor. O que ela tem é o namespace, declarado na
+/// criação da superfície.
+pub const NAMESPACE: &str = "lyricslens";
+
 /// Geometria de um monitor: `(x, y, largura, altura)`.
 pub type Retangulo = (i32, i32, i32, i32);
 
@@ -51,6 +58,39 @@ pub trait Compositor: Send + Sync {
 
     /// O compositor já conhece a janela? As regras só pegam depois disso.
     fn janela_conhecida(&self) -> bool;
+
+    /// Onde o ponteiro está, em coordenada global.
+    ///
+    /// Wayland não conta isso ao cliente: uma janela só recebe posição relativa
+    /// à própria superfície. Isso basta para clicar, e não basta para arrastar
+    /// uma camada — quando a superfície se move, a coordenada relativa muda
+    /// sozinha, e não há como distinguir "o cursor andou" de "a camada andou".
+    /// Deduzir pela diferença faz a camada disparar na frente do cursor.
+    ///
+    /// Quem sabe a verdade é o compositor. `None` quando ele não conta, e aí o
+    /// arraste da camada não é oferecido. Ver #35.
+    fn posicao_do_cursor(&self) -> Option<(i32, i32)> {
+        None
+    }
+
+    /// Este compositor sabe ligar e desligar o desfoque atrás do overlay?
+    ///
+    /// Separado do `definir_desfoque` porque a interface precisa saber disso
+    /// *antes* de oferecer o controle — um botão que não faz nada é pior que
+    /// botão nenhum.
+    fn sabe_desfocar(&self) -> bool {
+        false
+    }
+
+    /// Borrar ou não o que está **atrás** do overlay.
+    ///
+    /// Quem borra o fundo de uma janela é o compositor, não o app: o
+    /// `backdrop-filter` do CSS borra o que está atrás do elemento *dentro da
+    /// página*, e atrás desta página não há página nenhuma — há o desktop, que
+    /// é do compositor. Ver #18.
+    fn definir_desfoque(&self, _atras: bool) -> Result<(), String> {
+        Err("este compositor não tem controle de desfoque conhecido".into())
+    }
 
     /// Troca o atalho global. Vazio dos dois lados significa "nenhum".
     fn registrar_atalho(&self, anterior: &str, novo: &str) -> Result<(), UiError>;

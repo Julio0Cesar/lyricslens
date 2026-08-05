@@ -42,6 +42,7 @@ const PREFERENCIAS: Settings = {
   marginBottom: 80,
   positionX: null,
   positionY: null,
+  layerMarginLeft: null,
   layerShell: false,
 };
 
@@ -257,8 +258,8 @@ describe("capa do álbum", () => {
     expect(document.querySelector("img")).toBeNull();
   });
 
-  /// Uma busca lenta pode responder depois da troca de música. A capa do disco
-  /// anterior sobre a letra do novo é o defeito que mais parece bug de faixa.
+  // Uma busca lenta pode responder depois da troca de música. A capa do disco
+  // anterior sobre a letra do novo é o defeito que mais parece bug de faixa.
   it("ignora a capa que chega para outra faixa", async () => {
     await comCapa({ showCover: true });
     act(() => emitir("cover", { trackKey: "outra|musica", url: CAPA }));

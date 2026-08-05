@@ -43,6 +43,8 @@ export const ptBR: Dicionario = {
   "backgroundOpacity.label": "Opacidade do fundo",
   "backgroundOpacity.hint": "0 deixa o fundo invisível — o desfoque atrás vem do compositor",
   "cornerRadius.label": "Arredondamento",
+  "blur.label": "Desfoque atrás",
+  "blur.hint": "borra o que está atrás do overlay · quem borra é o compositor",
 
   // ---- conteúdo ----
   "contextLines.label": "Linhas de contexto",
@@ -84,7 +86,7 @@ export const ptBR: Dicionario = {
   "position.center": "centralizar",
   "layerShell.label": "Camada do compositor",
   "layerShell.hint":
-    "fica acima até de tela cheia, mas deixa de ser arrastável · exige reiniciar o app",
+    "fica acima até de tela cheia · exige reiniciar o app",
   "layerShell.inactive": (motivo) => `ligada, mas sem efeito nesta sessão — ${motivo}`,
   "layerShell.unavailable": "indisponível",
   "reapply.hint": "reaplica flutuar, fixar, tamanho e posição",

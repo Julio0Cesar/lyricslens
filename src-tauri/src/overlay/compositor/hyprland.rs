@@ -6,7 +6,7 @@
 
 use std::sync::OnceLock;
 
-use super::{Compositor, Retangulo, TITULO};
+use super::{Compositor, Retangulo, NAMESPACE, TITULO};
 use crate::i18n::UiError;
 use crate::overlay::hotkey;
 
@@ -42,15 +42,19 @@ pub(crate) fn hyprctl(args: &[&str]) -> Result<String, String> {
 /// lia só o stdout e não checava o conteúdo, ele seguia achando que tinha dado
 /// certo: o resultado é o overlay parar de flutuar, de ser fixado e de assumir
 /// tamanho e posição, em silêncio, depois de uma atualização do compositor.
+///
+/// O mesmo corte vale para os atalhos: o `keyword` inteiro deixou de existir na
+/// 0.55, e não só para `bind` — `hyprctl keyword` de qualquer coisa responde
+/// *"keyword can't work with non-legacy parsers. Use eval."*. Ver #41.
 #[derive(Clone, Copy, PartialEq, Debug)]
-enum Dialeto {
+pub(crate) enum Dialeto {
     /// `dispatch setfloating title:^(...)$`
     Legado,
     /// `dispatch hl.dsp.window.float{ window = hl.get_window("...") }`
     Lua,
 }
 
-fn dialeto() -> Dialeto {
+pub(crate) fn dialeto() -> Dialeto {
     static CACHE: OnceLock<Dialeto> = OnceLock::new();
     *CACHE.get_or_init(|| {
         // Sonda sem efeito colateral nos dois lados: o seletor não casa com
@@ -128,6 +132,57 @@ fn mover(x: i32, y: i32) -> Result<String, String> {
     }
 }
 
+/// O nome da regra de desfoque.
+///
+/// É o que permite desfazer sem `hyprctl reload`: reaplicar com o valor
+/// invertido substitui a regra, e o efeito pega em janela já aberta. A #18
+/// tinha registrado o contrário — que só a sintaxe descontinuada era aceita e
+/// que desfazer exigiria recarregar a configuração inteira do usuário. As duas
+/// coisas valiam para o `keyword`, que morreu na 0.55; pela API Lua nenhuma das
+/// duas vale.
+const REGRA_DESFOQUE: &str = "lyricslens-blur";
+
+/// Liga e desliga o desfoque do que está atrás do overlay.
+///
+/// São duas regras porque são dois objetos diferentes para o compositor, com
+/// APIs e até com polaridade diferentes: janela comum é `window_rule` com
+/// `no_blur` (negativo, casando por título), camada é `layer_rule` com `blur`
+/// (positivo, casando por namespace). Aplicar as duas sempre sai mais barato do
+/// que descobrir em qual modo o overlay está: a que não corresponde ao modo
+/// atual simplesmente não casa com nada.
+fn definir_desfoque(atras: bool) -> Result<(), String> {
+    let checar = |saida: String| -> Result<(), String> {
+        if saida.trim().eq_ignore_ascii_case("ok") {
+            Ok(())
+        } else {
+            Err(saida.trim().to_string())
+        }
+    };
+
+    checar(hyprctl(&[
+        "eval",
+        &format!(
+            "hl.window_rule({{ name = \"{REGRA_DESFOQUE}-janela\", \
+             match = {{ title = \"^({TITULO})$\" }}, no_blur = {} }})",
+            !atras
+        ),
+    ])?)?;
+
+    checar(hyprctl(&[
+        "eval",
+        &format!(
+            "hl.layer_rule({{ name = \"{REGRA_DESFOQUE}-camada\", \
+             match = {{ namespace = \"^({NAMESPACE})$\" }}, blur = {atras} }})"
+        ),
+    ])?)
+}
+
+/// `"607, 881"` → `(607, 881)`.
+fn ler_cursorpos(saida: &str) -> Option<(i32, i32)> {
+    let (x, y) = saida.split_once(',')?;
+    Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
+}
+
 fn cliente_overlay() -> Option<serde_json::Value> {
     let json = hyprctl(&["-j", "clients"]).ok()?;
     let clients: serde_json::Value = serde_json::from_str(&json).ok()?;
@@ -138,19 +193,55 @@ fn cliente_overlay() -> Option<serde_json::Value> {
         .cloned()
 }
 
+/// O nome do monitor onde a **camada** do overlay está.
+///
+/// Uma layer surface não aparece em `hyprctl clients`: aquilo lista janelas, e
+/// camada não é janela. Sem isto o modo camada não tinha monitor conhecido, e
+/// quem perguntava recebia `None` — o que fez o limite do arraste cair no ramo
+/// "sem teto" e deixou a camada escapar da tela, de onde não há como trazê-la
+/// de volta. Ver #35.
+fn monitor_da_camada() -> Option<String> {
+    let json = hyprctl(&["-j", "layers"]).ok()?;
+    let layers: serde_json::Value = serde_json::from_str(&json).ok()?;
+
+    layers.as_object()?.iter().find_map(|(monitor, dados)| {
+        let tem = dados
+            .get("levels")?
+            .as_object()?
+            .values()
+            .filter_map(|nivel| nivel.as_array())
+            .flatten()
+            .any(|l| l.get("namespace").and_then(|n| n.as_str()) == Some(NAMESPACE));
+        tem.then(|| monitor.clone())
+    })
+}
+
 /// Geometria `(x, y, largura, altura)` do monitor onde o overlay está.
+///
+/// Pergunta pelos dois caminhos porque o overlay pode ser das duas naturezas:
+/// janela comum, que está em `clients`, ou camada, que está em `layers`.
 fn monitor_do_overlay() -> Option<(i32, i32, i32, i32)> {
     if !is_hyprland() {
         return None;
     }
-    let id = cliente_overlay()?.get("monitor")?.as_i64()?;
+
+    let id = cliente_overlay().and_then(|c| c.get("monitor")?.as_i64());
+    let nome = if id.is_none() {
+        monitor_da_camada()
+    } else {
+        None
+    };
+    if id.is_none() && nome.is_none() {
+        return None;
+    }
 
     let json = hyprctl(&["-j", "monitors"]).ok()?;
     let monitors: serde_json::Value = serde_json::from_str(&json).ok()?;
-    let m = monitors
-        .as_array()?
-        .iter()
-        .find(|m| m.get("id").and_then(|i| i.as_i64()) == Some(id))?;
+    let m = monitors.as_array()?.iter().find(|m| match (id, &nome) {
+        (Some(id), _) => m.get("id").and_then(|i| i.as_i64()) == Some(id),
+        (None, Some(nome)) => m.get("name").and_then(|n| n.as_str()) == Some(nome.as_str()),
+        _ => false,
+    })?;
 
     Some((
         m.get("x")?.as_i64()? as i32,
@@ -230,11 +321,54 @@ impl Compositor for Hyprland {
         hyprctl(&["clients"]).is_ok_and(|s| s.contains(TITULO))
     }
 
+    fn posicao_do_cursor(&self) -> Option<(i32, i32)> {
+        ler_cursorpos(&hyprctl(&["cursorpos"]).ok()?)
+    }
+
+    /// Só pela API Lua. No dialeto legado a única sintaxe aceita já era a
+    /// descontinuada, e desfazer uma regra individual exigiria `hyprctl
+    /// reload` — recarregar a configuração inteira da sessão do usuário por
+    /// causa de uma preferência do overlay. Melhor não oferecer o controle do
+    /// que oferecê-lo com esse preço escondido.
+    fn sabe_desfocar(&self) -> bool {
+        dialeto() == Dialeto::Lua
+    }
+
+    fn definir_desfoque(&self, atras: bool) -> Result<(), String> {
+        if !self.sabe_desfocar() {
+            return Err("precisa do Hyprland 0.55 ou mais novo".into());
+        }
+        definir_desfoque(atras)
+    }
+
     fn registrar_atalho(&self, anterior: &str, novo: &str) -> Result<(), UiError> {
         hotkey::apply(anterior, novo)
     }
 
     fn limpar_atalho(&self, atalho: &str) {
         hotkey::clear(atalho);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn le_a_posicao_do_cursor() {
+        assert_eq!(ler_cursorpos("607, 881"), Some((607, 881)));
+        assert_eq!(ler_cursorpos("0,0"), Some((0, 0)));
+        // Segundo monitor: a coordenada é global e atravessa os dois.
+        assert_eq!(ler_cursorpos("2516, 661"), Some((2516, 661)));
+    }
+
+    /// O `hyprctl` pode responder erro em vez de coordenada. Um `unwrap` aqui
+    /// derrubaria o app no meio de um arraste.
+    #[test]
+    fn resposta_que_nao_e_coordenada_nao_vira_posicao() {
+        assert_eq!(ler_cursorpos(""), None);
+        assert_eq!(ler_cursorpos("error: unknown request"), None);
+        assert_eq!(ler_cursorpos("607"), None);
+        assert_eq!(ler_cursorpos("a, b"), None);
     }
 }
