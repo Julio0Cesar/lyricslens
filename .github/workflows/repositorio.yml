@@ -1,0 +1,224 @@
+name: Repositório de pacotes
+
+# Um repositório APT ou YUM não é um servidor: é um conjunto de arquivos
+# estáticos com um índice assinado. O `apt` baixa o índice, descobre que existe
+# versão nova e baixa o `.deb`. Nada nisso exige processo rodando, e o GitHub
+# Pages serve arquivos estáticos. Ver #16.
+#
+# O índice é **reconstruído do zero** a cada publicação, a partir dos pacotes
+# anexados às releases. As releases são a fonte da verdade; o repositório é
+# derivado delas. Isso torna o job idempotente e auto-corrigível: se um índice
+# sair errado ou corrompido, rodar de novo conserta. A alternativa — acumular
+# estado no site publicado — depende de o estado anterior estar íntegro, e não
+# há como voltar atrás quando não está.
+on:
+  workflow_call:
+  # Reconstruir à mão: depois de mexer neste arquivo, ou para republicar sem
+  # esperar a próxima release.
+  workflow_dispatch:
+
+jobs:
+  publicar:
+    name: Publicar no GitHub Pages
+    runs-on: ubuntu-22.04
+
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    # Duas publicações simultâneas sobrescreveriam uma à outra no Pages.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ferramentas de empacotamento
+        run: |
+          set -euo pipefail
+          sudo apt-get -qq update
+          sudo apt-get -qq install -y dpkg-dev apt-utils createrepo-c rpm gnupg
+
+      # A chave é de assinatura do repositório, não do commit. A pública é
+      # derivada da privada aqui mesmo — guardá-la num segundo secret seria uma
+      # cópia a mais para sair de sincronia.
+      - name: Importar a chave de assinatura
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GPG_PRIVATE_KEY:-}" ]; then
+            echo "::error::falta o secret GPG_PRIVATE_KEY — sem ele o apt recusa o repositório, e com razão"
+            exit 1
+          fi
+
+          mkdir -p ~/.gnupg && chmod 700 ~/.gnupg
+          printf '%s' "$GPG_PASSPHRASE" > ~/.gnupg/passphrase
+          chmod 600 ~/.gnupg/passphrase
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+
+          impressao=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')
+          echo "IMPRESSAO=$impressao" >> "$GITHUB_ENV"
+          echo "chave importada: $impressao"
+
+      # Quantas versões o repositório oferece. Passado isso, quem quiser uma
+      # versão antiga baixa o pacote da release — que continua lá, intacta.
+      - name: Baixar os pacotes das releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MANTER: 10
+        run: |
+          set -euo pipefail
+          mkdir -p pacotes
+
+          todas=$(gh release list --limit 100 --exclude-drafts --json tagName --jq '.[].tagName')
+          total=$(echo "$todas" | grep -c . || true)
+          incluir=$(echo "$todas" | head -n "$MANTER")
+
+          echo "releases publicadas: $total | no repositório: até $MANTER"
+          if [ "$total" -gt "$MANTER" ]; then
+            echo "::notice::fora do repositório (ainda baixáveis pela página de releases):"
+            echo "$todas" | tail -n +"$((MANTER + 1))" | sed 's/^/  /'
+          fi
+
+          for tag in $incluir; do
+            # Release antiga pode não ter os dois formatos. Ausência não é
+            # falha: significa que aquela versão não entra no repositório.
+            if gh release download "$tag" -p 'lyricslens-x86_64.deb' -D "pacotes/$tag" 2>/dev/null; then
+              echo "  $tag  deb"
+            fi
+            if gh release download "$tag" -p 'lyricslens-x86_64.rpm' -D "pacotes/$tag" 2>/dev/null; then
+              echo "  $tag  rpm"
+            fi
+          done
+
+          encontrados=$(find pacotes -name '*.deb' -o -name '*.rpm' | wc -l)
+          if [ "$encontrados" -eq 0 ]; then
+            echo "::error::nenhum pacote encontrado nas releases — não há o que indexar"
+            exit 1
+          fi
+
+      # Repositório "flat": sem a árvore `dists/`, que existe para distribuição
+      # com muitos componentes e suítes. Aqui há um pacote e uma arquitetura.
+      # O apt suporta os dois formatos; este é o que dá para conferir a olho.
+      - name: Montar o índice APT
+        run: |
+          set -euo pipefail
+          mkdir -p site/apt
+
+          # O nome do arquivo na release não carrega a versão, então todas as
+          # versões colidiriam num diretório só. A versão vem do próprio pacote,
+          # não da tag: é ela que o apt compara para saber o que é mais novo.
+          for deb in pacotes/*/lyricslens-x86_64.deb; do
+            versao=$(dpkg-deb -f "$deb" Version)
+            arch=$(dpkg-deb -f "$deb" Architecture)
+            cp "$deb" "site/apt/lyricslens_${versao}_${arch}.deb"
+          done
+          ls -la site/apt
+
+          cd site/apt
+          dpkg-scanpackages --multiversion . > Packages
+          gzip -9kf Packages
+
+          apt-ftparchive \
+            -o APT::FTPArchive::Release::Origin=LyricsLens \
+            -o APT::FTPArchive::Release::Label=LyricsLens \
+            -o APT::FTPArchive::Release::Suite=stable \
+            -o APT::FTPArchive::Release::Architectures=amd64 \
+            -o APT::FTPArchive::Release::Components=main \
+            -o APT::FTPArchive::Release::Description="Letras sincronizadas sobre o que estiver na tela" \
+            release . > Release
+
+          # As duas formas: `InRelease` é o índice com a assinatura embutida e é
+          # o que o apt moderno busca primeiro; `Release.gpg` é a assinatura
+          # separada, para quem ainda pede o formato antigo.
+          gpg --batch --yes --pinentry-mode loopback --passphrase-file ~/.gnupg/passphrase \
+              --clearsign -o InRelease Release
+          gpg --batch --yes --pinentry-mode loopback --passphrase-file ~/.gnupg/passphrase \
+              --detach-sign --armor -o Release.gpg Release
+
+          echo "--- Release ---"; cat Release
+
+      - name: Montar o índice YUM
+        run: |
+          set -euo pipefail
+          mkdir -p site/rpm
+
+          # O rpm precisa da senha por um comando próprio: ele chama o gpg sem
+          # saber de pinentry, e sem isto a assinatura trava esperando um
+          # terminal que não existe no runner.
+          #
+          # Escrito linha a linha em vez de por heredoc: dentro de um bloco YAML
+          # o heredoc carrega a indentação junto, e macro do rpm com espaço na
+          # frente não é lida.
+          {
+            echo "%_signature gpg"
+            echo "%_gpg_path $HOME/.gnupg"
+            echo "%_gpg_name $IMPRESSAO"
+            echo "%__gpg_sign_cmd %{__gpg} gpg --batch --yes --pinentry-mode loopback --passphrase-file $HOME/.gnupg/passphrase --no-armor --no-secmem-warning -u \"%{_gpg_name}\" -sbo %{__signature_filename} %{__plaintext_filename}"
+          } > ~/.rpmmacros
+          cat ~/.rpmmacros
+
+          for rpm in pacotes/*/lyricslens-x86_64.rpm; do
+            nome=$(rpm -qp --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}.rpm' "$rpm" 2>/dev/null)
+            cp "$rpm" "site/rpm/$nome"
+            # Assina a cópia do repositório, não o anexo da release. Quem baixa
+            # da página de releases continua recebendo o arquivo original, com a
+            # soma que o SHA256SUMS daquela release publica.
+            rpm --addsign "site/rpm/$nome"
+          done
+
+          cd site/rpm
+          createrepo_c .
+          gpg --batch --yes --pinentry-mode loopback --passphrase-file ~/.gnupg/passphrase \
+              --detach-sign --armor repodata/repomd.xml
+
+          rpm -qp --qf '%{NAME} %{VERSION} %{SIGPGP:pgpsig}\n' ./*.rpm
+
+      - name: Conferir as assinaturas antes de publicar
+        run: |
+          set -euo pipefail
+          # Um repositório que o apt recusaria é pior que repositório nenhum:
+          # falha na cara do usuário no meio de um `apt update`, num arquivo que
+          # ele não sabe de onde veio.
+          gpg --verify site/apt/InRelease
+          gpg --verify site/apt/Release.gpg site/apt/Release
+          gpg --verify site/rpm/repodata/repomd.xml.asc site/rpm/repodata/repomd.xml
+
+          # `rpm --checksig` compara com o chaveiro do rpm, que é outro e está
+          # vazio no runner — ele reclamaria de chave faltando mesmo com a
+          # assinatura correta. O que importa aqui é que o cabeçalho de
+          # assinatura exista; conferir contra a chave é o trabalho da máquina
+          # de quem instala, e é para isso que o `.repo` traz o `gpgkey`.
+          for r in site/rpm/*.rpm; do
+            assinatura=$(rpm -qp --qf '%{SIGPGP:pgpsig}' "$r" 2>/dev/null)
+            if [ -z "$assinatura" ] || [ "$assinatura" = "(none)" ]; then
+              echo "::error::$r saiu sem assinatura"
+              exit 1
+            fi
+            echo "  $(basename "$r"): $assinatura"
+          done
+
+      - name: Chave pública e página de instruções
+        run: |
+          set -euo pipefail
+          gpg --armor --export "$IMPRESSAO" > site/lyricslens.asc
+          cp docs/repositorio.html site/index.html
+          # O Pages serve com Jekyll por padrão, que ignora arquivos e pastas
+          # começando com underscore e pode reescrever o que não deve.
+          touch site/.nojekyll
+          find site -maxdepth 2 -type f | sort
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

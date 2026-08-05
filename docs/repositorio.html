@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LyricsLens — repositório de pacotes</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --fundo: #ffffff;
+    --texto: #1a1a1f;
+    --apagado: #5c5c6a;
+    --borda: #e2e2e8;
+    --caixa: #f6f6f9;
+    --destaque: #4f46e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fundo: #0a0a0e;
+      --texto: #e8e8ee;
+      --apagado: #9a9aa8;
+      --borda: #26262e;
+      --caixa: #14141a;
+      --destaque: #a5a0f5;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0 auto; padding: 3rem 1.25rem 5rem; max-width: 46rem;
+    background: var(--fundo); color: var(--texto);
+    font: 16px/1.65 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: 1.9rem; margin: 0 0 .35rem; letter-spacing: -0.02em; }
+  h2 { font-size: 1.15rem; margin: 2.75rem 0 .75rem; letter-spacing: -0.01em; }
+  .sub { color: var(--apagado); margin: 0 0 2.5rem; }
+  p { margin: 0 0 1rem; }
+  a { color: var(--destaque); }
+  pre {
+    background: var(--caixa); border: 1px solid var(--borda); border-radius: 8px;
+    padding: .9rem 1rem; overflow-x: auto; font-size: .875rem; line-height: 1.55;
+    margin: 0 0 1rem;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  p code { background: var(--caixa); padding: .1rem .35rem; border-radius: 4px; font-size: .875em; }
+  .nota {
+    border-left: 3px solid var(--borda); padding: .1rem 0 .1rem 1rem;
+    color: var(--apagado); font-size: .925rem; margin: 0 0 1rem;
+  }
+  footer {
+    margin-top: 3.5rem; padding-top: 1.25rem; border-top: 1px solid var(--borda);
+    color: var(--apagado); font-size: .875rem;
+  }
+</style>
+</head>
+<body>
+
+<h1>LyricsLens</h1>
+<p class="sub">Repositório de pacotes — atualizações pelo gerenciador da sua distribuição.</p>
+
+<p>
+  Adicionando este repositório, o <code>lyricslens</code> passa a ser atualizado
+  junto com o resto do sistema, sem baixar arquivo à mão a cada versão.
+  Se preferir instalar sem repositório, os pacotes continuam em
+  <a href="https://github.com/Julio0Cesar/lyricslens/releases/latest">Releases</a>.
+</p>
+
+<h2>Debian, Ubuntu, Mint</h2>
+
+<pre><code>curl -fsSL https://julio0cesar.github.io/lyricslens/lyricslens.asc \
+  | sudo gpg --dearmor -o /usr/share/keyrings/lyricslens.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/lyricslens.gpg] https://julio0cesar.github.io/lyricslens/apt ./" \
+  | sudo tee /etc/apt/sources.list.d/lyricslens.list
+
+sudo apt update
+sudo apt install lyricslens</code></pre>
+
+<p class="nota">
+  O <code>signed-by</code> restringe a chave a este repositório. Sem ele a chave
+  passaria a valer para qualquer repositório configurado na máquina, o que é
+  bem mais poder do que instalar um app precisa.
+</p>
+
+<h2>Fedora, openSUSE, RHEL</h2>
+
+<pre><code>sudo rpm --import https://julio0cesar.github.io/lyricslens/lyricslens.asc
+
+sudo tee /etc/yum.repos.d/lyricslens.repo &lt;&lt;'EOF'
+[lyricslens]
+name=LyricsLens
+baseurl=https://julio0cesar.github.io/lyricslens/rpm
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://julio0cesar.github.io/lyricslens/lyricslens.asc
+EOF
+
+sudo dnf install lyricslens</code></pre>
+
+<p class="nota">
+  <code>gpgcheck</code> confere a assinatura de cada pacote;
+  <code>repo_gpgcheck</code> confere a do índice. Os dois estão ligados
+  de propósito — o primeiro sem o segundo deixaria alguém trocar a lista de
+  pacotes disponíveis.
+</p>
+
+<h2>Conferindo a chave</h2>
+
+<p>
+  A impressão digital da chave que assina este repositório:
+</p>
+
+<pre><code>F442 087C 732F 68D2 752E  85AC FDB1 007B 2804 89EA</code></pre>
+
+<p>
+  Depois de importar, compare com o que o seu sistema registrou:
+</p>
+
+<pre><code>gpg --show-keys /usr/share/keyrings/lyricslens.gpg   # Debian
+rpm -qi gpg-pubkey-280489ea                          # Fedora</code></pre>
+
+<h2>Removendo</h2>
+
+<pre><code>sudo rm /etc/apt/sources.list.d/lyricslens.list /usr/share/keyrings/lyricslens.gpg   # Debian
+sudo rm /etc/yum.repos.d/lyricslens.repo                                            # Fedora</code></pre>
+
+<h2>O que fica aqui</h2>
+
+<p>
+  O repositório oferece as dez versões mais recentes. Versões anteriores
+  continuam disponíveis como anexo das
+  <a href="https://github.com/Julio0Cesar/lyricslens/releases">releases</a>,
+  que é onde elas sempre estiveram.
+</p>
+
+<p>
+  Arquiteturas: <code>x86_64</code> apenas.
+</p>
+
+<footer>
+  <a href="https://github.com/Julio0Cesar/lyricslens">github.com/Julio0Cesar/lyricslens</a>
+  · índice reconstruído a cada release
+</footer>
+
+</body>
+</html>
