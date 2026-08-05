@@ -34,19 +34,42 @@ floating window — following the song word by word.
 
 ### Debian, Ubuntu, Mint
 
-Download the `.deb` from [Releases](https://github.com/Julio0Cesar/lyricslens/releases/latest), then:
+From the repository, so it updates along with the rest of your system:
 
 ```bash
-sudo apt install ./lyricslens-x86_64.deb
+curl -fsSL https://julio0cesar.github.io/lyricslens/lyricslens.asc \
+  | sudo gpg --dearmor -o /usr/share/keyrings/lyricslens.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/lyricslens.gpg] https://julio0cesar.github.io/lyricslens/apt ./" \
+  | sudo tee /etc/apt/sources.list.d/lyricslens.list
+
+sudo apt update && sudo apt install lyricslens
 ```
+
+Or download the `.deb` from [Releases](https://github.com/Julio0Cesar/lyricslens/releases/latest) and `sudo apt install ./lyricslens-x86_64.deb`.
 
 ### Fedora, openSUSE
 
-Download the `.rpm` from [Releases](https://github.com/Julio0Cesar/lyricslens/releases/latest), then:
-
 ```bash
-sudo dnf install ./lyricslens-x86_64.rpm
+sudo rpm --import https://julio0cesar.github.io/lyricslens/lyricslens.asc
+
+sudo tee /etc/yum.repos.d/lyricslens.repo <<'EOF'
+[lyricslens]
+name=LyricsLens
+baseurl=https://julio0cesar.github.io/lyricslens/rpm
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://julio0cesar.github.io/lyricslens/lyricslens.asc
+EOF
+
+sudo dnf install lyricslens
 ```
+
+Or download the `.rpm` from [Releases](https://github.com/Julio0Cesar/lyricslens/releases/latest) and `sudo dnf install ./lyricslens-x86_64.rpm`.
+
+Repository details, key fingerprint and how to remove it:
+[julio0cesar.github.io/lyricslens](https://julio0cesar.github.io/lyricslens/).
 
 `apt install ./file.deb` and `dnf install ./file.rpm` resolve dependencies.
 `dpkg -i` and `rpm -i` do not — they fail with unmet dependencies and leave the

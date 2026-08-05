@@ -35,19 +35,42 @@ flutuante — acompanhando a música palavra por palavra.
 
 ### Debian, Ubuntu, Mint
 
-Baixe o `.deb` em [Releases](https://github.com/Julio0Cesar/lyricslens/releases/latest) e:
+Pelo repositório, para receber atualização junto com o resto do sistema:
 
 ```bash
-sudo apt install ./lyricslens-x86_64.deb
+curl -fsSL https://julio0cesar.github.io/lyricslens/lyricslens.asc \
+  | sudo gpg --dearmor -o /usr/share/keyrings/lyricslens.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/lyricslens.gpg] https://julio0cesar.github.io/lyricslens/apt ./" \
+  | sudo tee /etc/apt/sources.list.d/lyricslens.list
+
+sudo apt update && sudo apt install lyricslens
 ```
+
+Ou baixe o `.deb` em [Releases](https://github.com/Julio0Cesar/lyricslens/releases/latest) e `sudo apt install ./lyricslens-x86_64.deb`.
 
 ### Fedora, openSUSE
 
-Baixe o `.rpm` em [Releases](https://github.com/Julio0Cesar/lyricslens/releases/latest) e:
-
 ```bash
-sudo dnf install ./lyricslens-x86_64.rpm
+sudo rpm --import https://julio0cesar.github.io/lyricslens/lyricslens.asc
+
+sudo tee /etc/yum.repos.d/lyricslens.repo <<'EOF'
+[lyricslens]
+name=LyricsLens
+baseurl=https://julio0cesar.github.io/lyricslens/rpm
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://julio0cesar.github.io/lyricslens/lyricslens.asc
+EOF
+
+sudo dnf install lyricslens
 ```
+
+Ou baixe o `.rpm` em [Releases](https://github.com/Julio0Cesar/lyricslens/releases/latest) e `sudo dnf install ./lyricslens-x86_64.rpm`.
+
+Detalhes do repositório, impressão digital da chave e como remover:
+[julio0cesar.github.io/lyricslens](https://julio0cesar.github.io/lyricslens/).
 
 O `apt install ./arquivo.deb` e o `dnf install ./arquivo.rpm` resolvem as
 dependências. O `dpkg -i` e o `rpm -i` não — eles falham com *unmet
