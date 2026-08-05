@@ -6,7 +6,7 @@
 
 use std::sync::OnceLock;
 
-use super::{Compositor, Retangulo, TITULO};
+use super::{Compositor, Retangulo, NAMESPACE, TITULO};
 use crate::i18n::UiError;
 use crate::overlay::hotkey;
 
@@ -132,6 +132,51 @@ fn mover(x: i32, y: i32) -> Result<String, String> {
     }
 }
 
+/// O nome da regra de desfoque.
+///
+/// É o que permite desfazer sem `hyprctl reload`: reaplicar com o valor
+/// invertido substitui a regra, e o efeito pega em janela já aberta. A #18
+/// tinha registrado o contrário — que só a sintaxe descontinuada era aceita e
+/// que desfazer exigiria recarregar a configuração inteira do usuário. As duas
+/// coisas valiam para o `keyword`, que morreu na 0.55; pela API Lua nenhuma das
+/// duas vale.
+const REGRA_DESFOQUE: &str = "lyricslens-blur";
+
+/// Liga e desliga o desfoque do que está atrás do overlay.
+///
+/// São duas regras porque são dois objetos diferentes para o compositor, com
+/// APIs e até com polaridade diferentes: janela comum é `window_rule` com
+/// `no_blur` (negativo, casando por título), camada é `layer_rule` com `blur`
+/// (positivo, casando por namespace). Aplicar as duas sempre sai mais barato do
+/// que descobrir em qual modo o overlay está: a que não corresponde ao modo
+/// atual simplesmente não casa com nada.
+fn definir_desfoque(atras: bool) -> Result<(), String> {
+    let checar = |saida: String| -> Result<(), String> {
+        if saida.trim().eq_ignore_ascii_case("ok") {
+            Ok(())
+        } else {
+            Err(saida.trim().to_string())
+        }
+    };
+
+    checar(hyprctl(&[
+        "eval",
+        &format!(
+            "hl.window_rule({{ name = \"{REGRA_DESFOQUE}-janela\", \
+             match = {{ title = \"^({TITULO})$\" }}, no_blur = {} }})",
+            !atras
+        ),
+    ])?)?;
+
+    checar(hyprctl(&[
+        "eval",
+        &format!(
+            "hl.layer_rule({{ name = \"{REGRA_DESFOQUE}-camada\", \
+             match = {{ namespace = \"^({NAMESPACE})$\" }}, blur = {atras} }})"
+        ),
+    ])?)
+}
+
 fn cliente_overlay() -> Option<serde_json::Value> {
     let json = hyprctl(&["-j", "clients"]).ok()?;
     let clients: serde_json::Value = serde_json::from_str(&json).ok()?;
@@ -232,6 +277,22 @@ impl Compositor for Hyprland {
 
     fn janela_conhecida(&self) -> bool {
         hyprctl(&["clients"]).is_ok_and(|s| s.contains(TITULO))
+    }
+
+    /// Só pela API Lua. No dialeto legado a única sintaxe aceita já era a
+    /// descontinuada, e desfazer uma regra individual exigiria `hyprctl
+    /// reload` — recarregar a configuração inteira da sessão do usuário por
+    /// causa de uma preferência do overlay. Melhor não oferecer o controle do
+    /// que oferecê-lo com esse preço escondido.
+    fn sabe_desfocar(&self) -> bool {
+        dialeto() == Dialeto::Lua
+    }
+
+    fn definir_desfoque(&self, atras: bool) -> Result<(), String> {
+        if !self.sabe_desfocar() {
+            return Err("precisa do Hyprland 0.55 ou mais novo".into());
+        }
+        definir_desfoque(atras)
     }
 
     fn registrar_atalho(&self, anterior: &str, novo: &str) -> Result<(), UiError> {

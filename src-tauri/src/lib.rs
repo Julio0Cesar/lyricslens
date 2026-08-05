@@ -225,6 +225,8 @@ struct OverlayStatus {
     layer_shell_active: bool,
     /// Por que os dois diferem. `None` quando não diferem.
     layer_shell_fallback: Option<String>,
+    /// O compositor sabe ligar e desligar o desfoque atrás do overlay? Ver #18.
+    blur_available: bool,
 }
 
 #[tauri::command]
@@ -233,6 +235,7 @@ fn overlay_status(state: tauri::State<'_, AppState>) -> OverlayStatus {
         layer_shell_requested: state.settings.lock().unwrap().layer_shell,
         layer_shell_active: state.layer_shell_active.load(Ordering::SeqCst),
         layer_shell_fallback: state.layer_shell_fallback.lock().unwrap().clone(),
+        blur_available: overlay::compositor::atual().sabe_desfocar(),
     }
 }
 

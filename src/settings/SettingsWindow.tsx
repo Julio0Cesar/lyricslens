@@ -148,6 +148,16 @@ export default function SettingsWindow() {
               onChange={(v) => update({ cornerRadius: v })}
             />
           </Row>
+          {/* Só aparece onde o compositor sabe obedecer. Um controle de
+              desfoque que não desfoca nada seria pior que a ausência dele. */}
+          {status?.blurAvailable && (
+            <Row label={t["blur.label"]} hint={t["blur.hint"]}>
+              <Toggle
+                value={settings.blur}
+                onChange={(v) => update({ blur: v })}
+              />
+            </Row>
+          )}
         </Section>
 
         <Section title={t["section.content"]}>

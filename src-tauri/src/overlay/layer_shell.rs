@@ -64,7 +64,7 @@ pub fn init(window: &WebviewWindow, geo: Geometry) -> Result<(), String> {
     gtk_window.init_layer_shell();
     gtk_window.set_layer(Layer::Overlay);
     // O namespace é como o compositor identifica a camada em regras próprias.
-    gtk_window.set_namespace("lyricslens");
+    gtk_window.set_namespace(super::compositor::NAMESPACE);
 
     // Ancorar só embaixo mantém a largura definida por nós; ancorar nos dois
     // lados horizontais faria a camada esticar de ponta a ponta da tela.

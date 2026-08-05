@@ -28,6 +28,8 @@ pub struct Geometry {
     pub margin_bottom: i32,
     /// Onde o usuário largou a janela. `None` recentraliza no rodapé.
     pub position: Option<(i32, i32)>,
+    /// Borrar o que está atrás do overlay. Quem borra é o compositor.
+    pub blur: bool,
     /// Quando a janela é uma camada do compositor, quem posiciona é o
     /// protocolo — as regras via IPC não se aplicam e atrapalhariam.
     pub layer_shell: bool,
@@ -40,6 +42,7 @@ impl From<&crate::store::Settings> for Geometry {
             height: s.height as i32,
             margin_bottom: s.margin_bottom as i32,
             position: s.position_x.zip(s.position_y),
+            blur: s.blur,
             layer_shell: s.layer_shell,
         }
     }
@@ -82,6 +85,13 @@ pub fn set_click_through(window: WebviewWindow, enabled: bool) -> Result<(), Str
 /// O seletor tem que ser específico: sem `title:`, a regra pegaria também a
 /// janela de configurações, que é do mesmo processo e da mesma classe.
 pub fn apply_rules(window: &WebviewWindow, geo: Geometry) -> Result<String, String> {
+    // Antes do desvio da camada, porque vale nos dois modos. Falhar aqui não
+    // derruba o resto: é uma preferência de aparência, e um compositor sem
+    // controle de desfoque não impede o overlay de ser posto no lugar.
+    if let Err(e) = compositor::atual().definir_desfoque(geo.blur) {
+        logar!(Info, "overlay", "sem controle de desfoque: {e}");
+    }
+
     if geo.layer_shell {
         layer_shell::update_geometry(window, geo);
         return Ok("posição vem do protocolo de camadas".into());
