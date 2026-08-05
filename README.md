@@ -17,14 +17,11 @@ floating window — following the song word by word.
 
 </div>
 
-<!-- #20 — the GIF of the overlay in action goes here, right below the title.
-     Record ~5s with music playing, lyrics following word by word, over any
-     window. Save it as assets/demo.gif and replace this comment with:
+<div align="center">
 
-     <div align="center"><img src="assets/demo.gif" alt="The overlay following the lyrics" width="720"></div>
+<img src="assets/demo.gif" alt="The overlay following the lyrics word by word, over a browser window" width="518">
 
-     A second image of the settings window (assets/settings.png) goes in the
-     Usage section. -->
+</div>
 
 ---
 

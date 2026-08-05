@@ -17,15 +17,11 @@ flutuante — acompanhando a música palavra por palavra.
 
 </div>
 
-<!-- #20 — o GIF do overlay em funcionamento entra aqui, logo abaixo do título.
-     Grave ~5s com música tocando, a letra acompanhando palavra por palavra,
-     sobre alguma janela qualquer. Salve em assets/demo.gif e troque este
-     comentário por:
+<div align="center">
 
-     <div align="center"><img src="assets/demo.gif" alt="O overlay acompanhando a letra" width="720"></div>
+<img src="assets/demo.gif" alt="O overlay acompanhando a letra palavra por palavra, sobre uma janela do navegador" width="518">
 
-     Uma segunda imagem da janela de configurações (assets/settings.png) entra
-     na seção Uso. -->
+</div>
 
 ---
 

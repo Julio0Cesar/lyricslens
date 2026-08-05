@@ -20,27 +20,114 @@ BIN="$HOME/.local/bin"
 ATALHOS="$PREFIXO/applications"
 ICONES="$PREFIXO/icons/hicolor"
 
+ESTADO="${XDG_STATE_HOME:-$HOME/.local/state}/$NOME"
+DADOS="$PREFIXO/com.kintiz.$NOME"
+
+# --- idioma ------------------------------------------------------------------
+#
+# O README existe em inglês e em português; o instalador respondia só em
+# português. Quem chegava pela versão em inglês rodava o comando documentado e
+# recebia a saída noutra língua — e é o primeiro contato com o projeto.
+#
+# Os pares ficam adjacentes de propósito: tradução faltando aparece na hora de
+# editar, em vez de virar uma linha em branco meses depois.
+
+case "${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}" in
+  pt*|*_BR*|*_PT*) IDIOMA=pt ;;
+  *)               IDIOMA=en ;;
+esac
+
+t() {
+  chave="$1"
+  shift
+  case "$IDIOMA:$chave" in
+    pt:instalando)      printf 'Instalando o LyricsLens…' ;;
+    en:instalando)      printf 'Installing LyricsLens…' ;;
+    pt:erro)            printf 'erro: %s' "$1" ;;
+    en:erro)            printf 'error: %s' "$1" ;;
+    pt:falta-comando)   printf "preciso do comando '%s' e ele não está instalado" "$1" ;;
+    en:falta-comando)   printf "I need the '%s' command and it is not installed" "$1" ;;
+    pt:removido)        printf 'LyricsLens removido.' ;;
+    en:removido)        printf 'LyricsLens removed.' ;;
+    pt:removido-fica)   printf 'As suas preferências e o cache de letras continuam em:' ;;
+    en:removido-fica)   printf 'Your preferences and lyrics cache are still in:' ;;
+    pt:so-x86)          printf 'por enquanto só há pacote para x86_64 (esta máquina é %s)' "$1" ;;
+    en:so-x86)          printf 'for now there is only an x86_64 package (this machine is %s)' "$1" ;;
+    pt:baixando-leve)   printf 'baixando a última versão (8MB — as bibliotecas já estão no seu sistema)' ;;
+    en:baixando-leve)   printf 'downloading the latest version (8MB — the libraries are already on your system)' ;;
+    pt:baixando-cheio1) printf 'baixando a última versão (82MB — o pacote traz o WebKit e o GTK dentro,' ;;
+    en:baixando-cheio1) printf 'downloading the latest version (82MB — the package bundles WebKit and GTK,' ;;
+    pt:baixando-cheio2) printf 'porque não encontrei os do sistema)' ;;
+    en:baixando-cheio2) printf 'because I could not find them on your system)' ;;
+    pt:sem-tarball)     printf 'esta release não publica o tarball — usando o AppImage' ;;
+    en:sem-tarball)     printf 'this release does not publish the tarball — using the AppImage' ;;
+    pt:sem-pacote)      printf 'não consegui baixar o pacote — confira se já existe uma release em https://github.com/%s/releases' "$1" ;;
+    en:sem-pacote)      printf 'could not download the package — check whether a release exists at https://github.com/%s/releases' "$1" ;;
+    pt:sem-icone)       printf 'não consegui baixar o ícone' ;;
+    en:sem-icone)       printf 'could not download the icon' ;;
+    pt:sem-soma)        printf 'sem sha256sum nem shasum — pulando a conferência de integridade' ;;
+    en:sem-soma)        printf 'no sha256sum or shasum — skipping the integrity check' ;;
+    pt:soma-ausente)    printf 'o SHA256SUMS não lista %s — pulando a conferência' "$1" ;;
+    en:soma-ausente)    printf 'SHA256SUMS does not list %s — skipping the check' "$1" ;;
+    pt:soma-diverge)    printf 'o pacote baixado não confere com o checksum publicado\n  esperado: %s\n  obtido:   %s\nNão vou instalar. Tente de novo; se persistir, abra uma issue.' "$1" "$2" ;;
+    en:soma-diverge)    printf 'the downloaded package does not match the published checksum\n  expected: %s\n  got:      %s\nNot installing. Try again; if it persists, open an issue.' "$1" "$2" ;;
+    pt:soma-ok)         printf 'integridade conferida' ;;
+    en:soma-ok)         printf 'integrity verified' ;;
+    pt:sem-checksums)   printf 'esta release não publica checksums — pulando a conferência' ;;
+    en:sem-checksums)   printf 'this release publishes no checksums — skipping the check' ;;
+    pt:extraindo)       printf 'extraindo' ;;
+    en:extraindo)       printf 'extracting' ;;
+    pt:falha-extrair)   printf 'não consegui extrair o pacote' ;;
+    en:falha-extrair)   printf 'could not extract the package' ;;
+    pt:copiado-mas)     printf 'LyricsLens foi copiado, mas ainda não vai abrir.' ;;
+    en:copiado-mas)     printf 'LyricsLens was copied, but it will not open yet.' ;;
+    pt:faltam-libs)     printf 'Faltam bibliotecas de sistema:' ;;
+    en:faltam-libs)     printf 'System libraries are missing:' ;;
+    pt:instale-com)     printf 'Instale com:' ;;
+    en:instale-com)     printf 'Install them with:' ;;
+    pt:instale-manual)  printf 'Instale-as pelo gerenciador de pacotes da sua distribuição e rode o app de novo.' ;;
+    en:instale-manual)  printf "Install them with your distribution's package manager and run the app again." ;;
+    pt:depois-super)    printf 'Depois disso, aperte Super e procure por "LyricsLens".' ;;
+    en:depois-super)    printf 'After that, press Super and search for "LyricsLens".' ;;
+    pt:instalado)       printf 'LyricsLens instalado.' ;;
+    en:instalado)       printf 'LyricsLens installed.' ;;
+    pt:aperte-super)    printf 'Aperte Super e procure por "LyricsLens".' ;;
+    en:aperte-super)    printf 'Press Super and search for "LyricsLens".' ;;
+    pt:ou-rode)         printf 'Ou rode: %s' "$1" ;;
+    en:ou-rode)         printf 'Or run: %s' "$1" ;;
+    pt:fora-do-path)    printf 'atenção: %s não está no seu PATH.' "$1" ;;
+    en:fora-do-path)    printf 'warning: %s is not on your PATH.' "$1" ;;
+    pt:path-explica)    printf 'O app aparece no menu normalmente, mas para chamar pelo terminal, adicione:' ;;
+    en:path-explica)    printf 'The app shows up in the menu as usual, but to call it from the terminal, add:' ;;
+  esac
+}
+
 vermelho() { printf '\033[31m%s\033[0m\n' "$1" >&2; }
 verde()    { printf '\033[32m%s\033[0m\n' "$1"; }
 info()     { printf '  %s\n' "$1"; }
 
 erro() {
-  vermelho "erro: $1"
+  vermelho "$(t erro "$1")"
   exit 1
 }
 
 precisa() {
-  command -v "$1" >/dev/null 2>&1 || erro "preciso do comando '$1' e ele não está instalado"
+  command -v "$1" >/dev/null 2>&1 || erro "$(t falta-comando "$1")"
 }
 
 desinstalar() {
   rm -rf "$DESTINO"
   rm -f "$BIN/$NOME" "$ATALHOS/$NOME.desktop"
+  # O log não é do usuário, é diagnóstico do app — ninguém quer o log de um
+  # programa que acabou de desinstalar. Ficava para trás em silêncio enquanto a
+  # mensagem abaixo listava só preferências e cache, o que fazia a
+  # desinstalação afirmar uma coisa e fazer outra.
+  rm -rf "$ESTADO"
   find "$ICONES" -name "$NOME.png" -delete 2>/dev/null || true
   command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$ATALHOS" 2>/dev/null || true
-  verde "LyricsLens removido."
-  info "As suas preferências e o cache de letras continuam em:"
-  info "  ${XDG_DATA_HOME:-$HOME/.local/share}/com.kintiz.lyricslens"
+  verde "$(t removido)"
+  info "$(t removido-fica)"
+  info "  $DADOS"
   exit 0
 }
 
@@ -52,10 +139,10 @@ precisa install
 
 case "$(uname -m)" in
   x86_64|amd64) ;;
-  *) erro "por enquanto só há pacote para x86_64 (esta máquina é $(uname -m))" ;;
+  *) erro "$(t so-x86 "$(uname -m)")" ;;
 esac
 
-printf 'Instalando o LyricsLens…\n\n'
+printf '%s\n\n' "$(t instalando)"
 
 # --- baixar -----------------------------------------------------------------
 
@@ -101,11 +188,11 @@ fi
 
 if [ "$FORMATO" = tarball ]; then
   PACOTE="$NOME-x86_64.tar.gz"
-  info "baixando a última versão (8MB — as bibliotecas já estão no seu sistema)"
+  info "$(t baixando-leve)"
 else
   PACOTE="$NOME-x86_64.AppImage"
-  info "baixando a última versão (82MB — o pacote traz o WebKit e o GTK dentro,"
-  info "porque não encontrei os do sistema)"
+  info "$(t baixando-cheio1)"
+  info "$(t baixando-cheio2)"
 fi
 
 if ! curl -fsSL "$BASE/$PACOTE" -o "$TMP/pacote"; then
@@ -114,16 +201,16 @@ if ! curl -fsSL "$BASE/$PACOTE" -o "$TMP/pacote"; then
   # nada — e o script é buscado sempre do `main`, então isso aconteceria com
   # todo mundo até a release seguinte sair.
   if [ "$FORMATO" = tarball ]; then
-    info "esta release não publica o tarball — usando o AppImage"
+    info "$(t sem-tarball)"
     FORMATO=appimage
     PACOTE="$NOME-x86_64.AppImage"
     curl -fsSL "$BASE/$PACOTE" -o "$TMP/pacote" \
-      || erro "não consegui baixar o pacote — confira se já existe uma release em https://github.com/$REPO/releases"
+      || erro "$(t sem-pacote "$REPO")"
   else
-    erro "não consegui baixar o pacote — confira se já existe uma release em https://github.com/$REPO/releases"
+    erro "$(t sem-pacote "$REPO")"
   fi
 fi
-curl -fsSL "$BASE/$NOME.png" -o "$TMP/icone.png" || erro "não consegui baixar o ícone"
+curl -fsSL "$BASE/$NOME.png" -o "$TMP/icone.png" || erro "$(t sem-icone)"
 
 # --- conferir a integridade -------------------------------------------------
 #
@@ -143,20 +230,17 @@ if curl -fsSL "$BASE/SHA256SUMS" -o "$TMP/SHA256SUMS" 2>/dev/null; then
   esperado="$(grep " $PACOTE\$" "$TMP/SHA256SUMS" | cut -d' ' -f1)"
   obtido="$(soma "$TMP/pacote")"
   if [ -z "$obtido" ]; then
-    info "sem sha256sum nem shasum — pulando a conferência de integridade"
+    info "$(t sem-soma)"
   elif [ -z "$esperado" ]; then
-    info "o SHA256SUMS não lista $PACOTE — pulando a conferência"
+    info "$(t soma-ausente "$PACOTE")"
   elif [ "$esperado" != "$obtido" ]; then
-    erro "o pacote baixado não confere com o checksum publicado
-  esperado: $esperado
-  obtido:   $obtido
-Não vou instalar. Tente de novo; se persistir, abra uma issue."
+    erro "$(t soma-diverge "$esperado" "$obtido")"
   else
-    info "integridade conferida"
+    info "$(t soma-ok)"
   fi
 else
   # Releases anteriores à v0.2.2 não publicam SHA256SUMS.
-  info "esta release não publica checksums — pulando a conferência"
+  info "$(t sem-checksums)"
 fi
 
 # --- extrair ----------------------------------------------------------------
@@ -164,17 +248,17 @@ fi
 # O AppImage é executado extraído, e não montado: montar exige libfuse2, que
 # várias distribuições já não instalam por padrão. Extrair funciona em todas.
 
-info "extraindo"
+info "$(t extraindo)"
 if [ "$FORMATO" = tarball ]; then
   mkdir -p "$TMP/conteudo"
   tar -xzf "$TMP/pacote" -C "$TMP/conteudo" --strip-components=1 \
-    || erro "não consegui extrair o pacote"
+    || erro "$(t falha-extrair)"
   EXECUTAVEL="bin/$NOME"
   ICONES_NO_PACOTE="share/icons/hicolor"
 else
   chmod +x "$TMP/pacote"
   ( cd "$TMP" && ./pacote --appimage-extract >/dev/null 2>&1 ) \
-    || erro "não consegui extrair o pacote"
+    || erro "$(t falha-extrair)"
   mv "$TMP/squashfs-root" "$TMP/conteudo"
   EXECUTAVEL="AppRun"
   ICONES_NO_PACOTE="usr/share/icons/hicolor"
@@ -235,8 +319,10 @@ cat > "$ATALHOS/$NOME.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=LyricsLens
-GenericName=Overlay de letras
-Comment=Letras sincronizadas sobre qualquer aplicativo
+GenericName=Lyrics overlay
+GenericName[pt_BR]=Overlay de letras
+Comment=Synced lyrics on top of any application
+Comment[pt_BR]=Letras sincronizadas sobre qualquer aplicativo
 Exec=$BIN/$NOME
 Icon=$NOME
 Terminal=false
@@ -282,35 +368,35 @@ fi
 printf '\n'
 
 if [ -n "$faltando" ]; then
-  vermelho "LyricsLens foi copiado, mas ainda não vai abrir."
+  vermelho "$(t copiado-mas)"
   printf '\n'
-  info "Faltam bibliotecas de sistema:"
+  info "$(t faltam-libs)"
   for lib in $faltando; do info "  - $lib"; done
   printf '\n'
   cmd="$(comando_de_instalacao)"
   if [ -n "$cmd" ]; then
-    info "Instale com:"
+    info "$(t instale-com)"
     info "  $cmd"
   else
-    info "Instale-as pelo gerenciador de pacotes da sua distribuição e rode o app de novo."
+    info "$(t instale-manual)"
   fi
   printf '\n'
-  info "Depois disso, aperte Super e procure por \"LyricsLens\"."
+  info "$(t depois-super)"
   printf '\n'
   exit 1
 fi
 
-verde "LyricsLens instalado."
+verde "$(t instalado)"
 printf '\n'
-info "Aperte Super e procure por \"LyricsLens\"."
-info "Ou rode: $NOME"
+info "$(t aperte-super)"
+info "$(t ou-rode "$NOME")"
 printf '\n'
 
 case ":$PATH:" in
   *":$BIN:"*) ;;
   *)
-    vermelho "atenção: $BIN não está no seu PATH."
-    info "O app aparece no menu normalmente, mas para chamar pelo terminal, adicione:"
+    vermelho "$(t fora-do-path "$BIN")"
+    info "$(t path-explica)"
     info "  export PATH=\"\$HOME/.local/bin:\$PATH\""
     ;;
 esac
