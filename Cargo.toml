@@ -1,6 +1,10 @@
 [package]
 name = "lyricslens"
 version = "0.1.0"
+description = "Synchronized lyrics overlay for the desktop"
 edition = "2024"
+license = "MIT"
+repository = "https://github.com/Julio0Cesar/lyricslens"
+
 
 [dependencies]
