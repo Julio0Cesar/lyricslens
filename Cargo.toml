@@ -10,3 +10,6 @@ repository = "https://github.com/Julio0Cesar/lyricslens"
 [dependencies]
 gtk4 = { version = "0.11", features = ["v4_12"] }
 gtk4-layer-shell = "0.8"
+thiserror = "2.0.20"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

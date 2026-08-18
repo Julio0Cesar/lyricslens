@@ -1,22 +1,32 @@
-use gtk4 as gtk;
-use gtk::prelude::*;
 use gtk::gdk::Display;
+use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow, CssProvider, Label};
+use gtk4 as gtk;
 use gtk4_layer_shell::{Edge, Layer, LayerShell};
+mod error;
 
 fn main() -> gtk::glib::ExitCode {
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
+
     let app = Application::builder()
         .application_id("io.github.julio0cesar.lyricslens")
         .build();
 
     app.connect_activate(|app| {
+        let Some(display) = Display::default() else {
+            tracing::error!("{}", error::Error::NoDisplay);
+            return;
+        };
+
         let provider = CssProvider::new();
         provider.load_from_string(
             "window { background: transparent; }
              label { color: white; font-size: 28px; }",
         );
         gtk::style_context_add_provider_for_display(
-            &Display::default().expect("no display"),
+            &display,
             &provider,
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
