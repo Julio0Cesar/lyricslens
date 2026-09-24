@@ -144,8 +144,7 @@ fn main() -> glib::ExitCode {
 
         glib::timeout_add_local(TICK, move || {
             let state = state.borrow();
-            overlay.show(state.line().as_deref());
-            overlay.show_upcoming(&state.upcoming());
+            overlay.show(state.line().as_deref(), &state.upcoming());
             overlay.show_progress(state.progress());
             glib::ControlFlow::Continue
         });
@@ -280,12 +279,12 @@ impl State {
         self.lyrics.as_ref()?.progress_at(position)
     }
 
-    /// The lines still to come, as many as the settings ask for.
+    /// The lines still to come.
+    ///
+    /// One more than the settings show: the overlay needs the line after the
+    /// last visible one ready to climb into its place.
     fn upcoming(&self) -> Vec<String> {
-        let wanted = usize::from(self.settings.upcoming_lines);
-        if wanted == 0 {
-            return Vec::new();
-        }
+        let wanted = usize::from(self.settings.upcoming_lines) + 1;
         let (Some(lyrics), Some(position)) =
             (self.lyrics.as_ref(), self.clock.position(Instant::now()))
         else {
