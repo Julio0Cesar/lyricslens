@@ -1,6 +1,7 @@
 //! Lyrics: where they come from, and how they are read.
 
 pub mod lrc;
+pub mod lrclib;
 pub mod normalize;
 
 use std::time::Duration;

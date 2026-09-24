@@ -13,4 +13,7 @@ pub enum Error {
 
     #[error("malformed D-Bus name: {0}")]
     Name(#[from] zbus::names::Error),
+
+    #[error("lyrics service: {0}")]
+    Http(#[from] reqwest::Error),
 }
