@@ -71,9 +71,9 @@ have. On Arch: `gtk4 libadwaita gtk4-layer-shell`. On Debian and Ubuntu:
 lyricslens
 ```
 
-The overlay appears near the bottom of the screen and follows the song. From
-the application menu it already runs in the background; from a terminal, add
-`--background` or it holds the shell.
+The overlay appears near the bottom of the screen and follows the song. It runs
+in the background and gives the terminal straight back. `lls` is the same
+program under a shorter name.
 
 Launching it again while a copy is running brings that one to the front instead
 of starting another.
@@ -84,8 +84,8 @@ use `lyricslens --quit` or the preferences window.
 
 | Command | What it does |
 | --- | --- |
-| `lyricslens` | runs the overlay, holding the terminal |
-| `lyricslens --background` | runs it and gives the terminal back |
+| `lyricslens`, or `lls` | runs the overlay and gives the terminal back |
+| `lyricslens --foreground` | keeps the terminal, for watching the log |
 | `lyricslens --settings` | opens the preferences window |
 | `lyricslens --toggle` | hides the overlay, or brings it back |
 | `lyricslens --position` | enters the mode where you drag it somewhere else |

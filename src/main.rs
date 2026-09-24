@@ -65,8 +65,14 @@ fn main() -> glib::ExitCode {
     // another. Saying so is the difference between "it did nothing" and "it is
     // already there".
     if running_elsewhere() {
-        println!("lyricslens is already running; bringing the overlay to the front");
+        println!("LyricsLens is already running; bringing the overlay to the front.");
         return send("present").unwrap_or(glib::ExitCode::SUCCESS);
+    }
+
+    // The overlay is meant to sit there all day, so the terminal comes back
+    // straight away. `--foreground` is for watching the log.
+    if !lyricslens::cli::wants_foreground() {
+        return glib::ExitCode::from(lyricslens::cli::detach());
     }
 
     let settings = Settings::load();

@@ -34,7 +34,12 @@ check() {
 package() {
   cd "$pkgname-$pkgver"
   install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+  ln -sf "$pkgname" "$pkgdir/usr/bin/lls"
   install -Dm644 "packaging/$pkgname.desktop" "$pkgdir/usr/share/applications/$pkgname.desktop"
+  for size in 32 64 128 256; do
+    install -Dm644 "packaging/icons/$size.png" \
+      "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/$pkgname.png"
+  done
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }
