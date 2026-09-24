@@ -15,6 +15,11 @@ use gtk4_layer_shell::{Edge, Layer, LayerShell};
 
 use crate::error::Error;
 
+mod x11;
+
+/// How far above the bottom of the screen the line sits.
+const BOTTOM_MARGIN: i32 = 100;
+
 /// Half a fade. One line goes out over this, the next comes in over it.
 const FADE: Duration = Duration::from_millis(140);
 
@@ -67,15 +72,26 @@ impl Overlay {
             .child(&label)
             .build();
 
-        window.init_layer_shell();
-        // Top does not survive a fullscreen window; Overlay does, and that is
-        // the whole point of the project.
-        window.set_layer(Layer::Overlay);
-        window.set_anchor(Edge::Bottom, true);
-        window.set_margin(Edge::Bottom, 100);
-        // Without this the compositor shrinks every other window, the way it
-        // does for a panel.
-        window.set_exclusive_zone(-1);
+        // The branch is on the protocol, never on which desktop is running.
+        // GNOME is the case that lands here, because Mutter does not implement
+        // wlr-layer-shell and does not intend to — but so does any plain X11
+        // session.
+        if gtk4_layer_shell::is_supported() {
+            window.init_layer_shell();
+            // Top does not survive a fullscreen window; Overlay does, and that
+            // is the whole point of the project.
+            window.set_layer(Layer::Overlay);
+            window.set_anchor(Edge::Bottom, true);
+            window.set_margin(Edge::Bottom, BOTTOM_MARGIN);
+            // Without this the compositor shrinks every other window, the way
+            // it does for a panel.
+            window.set_exclusive_zone(-1);
+        } else {
+            tracing::info!("no layer-shell here; falling back to an X11 surface");
+            window.set_decorated(false);
+            x11::keep_above(&window, BOTTOM_MARGIN);
+        }
+
         window.present();
 
         Ok(Self {
