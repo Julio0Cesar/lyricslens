@@ -117,8 +117,12 @@ fn icon() -> Option<ksni::Icon> {
     }
 
     let mut data = Vec::with_capacity(pixels.len());
-    for pixel in pixels[..info.buffer_size()].chunks_exact(4) {
-        data.extend_from_slice(&[pixel[3], pixel[0], pixel[1], pixel[2]]);
+    let rgba = &pixels[..info.buffer_size()];
+    let mut at = 0;
+    while at + 4 <= rgba.len() {
+        let (r, g, b, a) = (rgba[at], rgba[at + 1], rgba[at + 2], rgba[at + 3]);
+        data.extend_from_slice(&[a, r, g, b]);
+        at += 4;
     }
 
     Some(ksni::Icon {
