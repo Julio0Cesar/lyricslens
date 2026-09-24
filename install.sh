@@ -126,4 +126,5 @@ case ":$PATH:" in
     *) say "Run it with: $BIN/$NAME"
        say "($BIN is not on your PATH; add it to use the short name.)" ;;
 esac
+say "In the background: $NAME --background"
 say "Preferences: $NAME --settings"

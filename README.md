@@ -71,11 +71,17 @@ have. On Arch: `gtk4 libadwaita gtk4-layer-shell`. On Debian and Ubuntu:
 lyricslens
 ```
 
-The overlay appears near the bottom of the screen and follows the song.
+The overlay appears near the bottom of the screen and follows the song. From
+the application menu it already runs in the background; from a terminal, add
+`--background` or it holds the shell.
+
+Launching it again while a copy is running brings that one to the front instead
+of starting another.
 
 | Command | What it does |
 | --- | --- |
-| `lyricslens` | runs the overlay |
+| `lyricslens` | runs the overlay, holding the terminal |
+| `lyricslens --background` | runs it and gives the terminal back |
 | `lyricslens --settings` | opens the preferences window |
 | `lyricslens --toggle` | hides the overlay, or brings it back |
 | `lyricslens --position` | enters the mode where you drag it somewhere else |

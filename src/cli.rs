@@ -17,6 +17,7 @@ Usage:
 Options:
   -h, --help        print this and exit
   -V, --version     print the version and exit
+      --background  run in the background and give the terminal back
       --settings    open the preferences window
       --toggle      hide the overlay, or bring it back
       --position    drag the overlay somewhere else, then press again
@@ -62,6 +63,9 @@ pub fn handle() -> Option<u8> {
     if has(&["--uninstall"]) {
         return Some(installer(&["--remove"]));
     }
+    if has(&["--background"]) {
+        return Some(detach());
+    }
 
     // An argument nobody recognises is a typo, and silently running the
     // overlay instead would hide it.
@@ -74,6 +78,45 @@ pub fn handle() -> Option<u8> {
     None
 }
 
+/// Starts a copy of the program detached from the terminal and returns.
+///
+/// GTK applications normally hold the terminal they were started from. This
+/// one is meant to sit there all day, so it can be asked to let go.
+fn detach() -> u8 {
+    use std::os::unix::process::CommandExt;
+    use std::process::Stdio;
+
+    let Ok(program) = std::env::current_exe() else {
+        eprintln!("lyricslens: could not find my own binary");
+        return 1;
+    };
+
+    let arguments: Vec<String> = std::env::args()
+        .skip(1)
+        .filter(|argument| argument != "--background")
+        .collect();
+
+    let mut command = Command::new(program);
+    command
+        .args(arguments)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    // A group of its own, so closing the terminal does not take it along.
+    command.process_group(0);
+
+    match command.spawn() {
+        Ok(child) => {
+            println!("lyricslens running in the background (pid {})", child.id());
+            0
+        }
+        Err(error) => {
+            eprintln!("lyricslens: could not start in the background: {error}");
+            1
+        }
+    }
+}
+
 fn known(argument: &str) -> bool {
     matches!(
         argument,
@@ -83,6 +126,7 @@ fn known(argument: &str) -> bool {
             | "--paths"
             | "--upgrade"
             | "--uninstall"
+            | "--background"
             | "--settings"
             | "--toggle"
             | "--position"

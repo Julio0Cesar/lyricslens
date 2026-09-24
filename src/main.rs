@@ -27,7 +27,11 @@ const ID: &str = "io.github.julio0cesar.lyricslens";
 /// Wayland gives an ordinary client no way to grab a key combination, so the
 /// hotkey belongs to the compositor. All this program offers is the command
 /// for the compositor to run.
-const COMMANDS: [(&str, &str); 2] = [("--toggle", "toggle"), ("--position", "position")];
+const COMMANDS: [(&str, &str); 3] = [
+    ("--toggle", "toggle"),
+    ("--position", "position"),
+    ("--settings", "settings"),
+];
 
 fn main() -> glib::ExitCode {
     tracing_subscriber::fmt()
@@ -38,16 +42,29 @@ fn main() -> glib::ExitCode {
         return glib::ExitCode::from(code);
     }
 
-    if let Some(action) = asked_command() {
-        return send(action);
+    // Anything the running overlay can do, it should do itself rather than a
+    // second copy doing it beside it.
+    if let Some(action) = asked_command()
+        && let Some(code) = send(action)
+    {
+        return code;
     }
 
     let application = adw::Application::builder().application_id(ID).build();
 
     if preferences::requested() {
+        // Nothing is running, so the preferences window is the whole program.
         application.connect_activate(preferences::open);
         // GTK would try to make sense of our own flags otherwise.
         return application.run_with_args::<&str>(&[]);
+    }
+
+    // Launching again while a copy runs is a request to see it, not to start
+    // another. Saying so is the difference between "it did nothing" and "it is
+    // already there".
+    if running_elsewhere() {
+        println!("lyricslens is already running; bringing the overlay to the front");
+        return send("present").unwrap_or(glib::ExitCode::SUCCESS);
     }
 
     let settings = Settings::load();
@@ -104,23 +121,43 @@ fn asked_command() -> Option<&'static str> {
         .map(|(_, action)| *action)
 }
 
-/// Hands the action to the instance already running, and says so when there is
-/// none.
-fn send(action: &str) -> glib::ExitCode {
+/// Hands the action to the instance already running.
+///
+/// `None` means there is none, and the caller decides what to do about it: for
+/// the preferences window that is to open one, for hiding the overlay there is
+/// nothing to hide.
+fn send(action: &str) -> Option<glib::ExitCode> {
     let remote = gio::Application::new(Some(ID), gio::ApplicationFlags::empty());
     if let Err(error) = remote.register(gio::Cancellable::NONE) {
-        eprintln!("could not reach the session bus: {error}");
-        return glib::ExitCode::FAILURE;
+        eprintln!("lyricslens: could not reach the session bus: {error}");
+        return Some(glib::ExitCode::FAILURE);
     }
     if !remote.is_remote() {
-        eprintln!("lyricslens is not running");
-        return glib::ExitCode::FAILURE;
+        return None;
     }
     remote.activate_action(action, None);
-    glib::ExitCode::SUCCESS
+    Some(glib::ExitCode::SUCCESS)
+}
+
+/// Whether another copy already holds the application's name on the bus.
+fn running_elsewhere() -> bool {
+    let probe = gio::Application::new(Some(ID), gio::ApplicationFlags::empty());
+    probe.register(gio::Cancellable::NONE).is_ok() && probe.is_remote()
 }
 
 fn add_commands(application: &adw::Application, overlay: &Rc<Overlay>) {
+    let present = gio::SimpleAction::new("present", None);
+    present.connect_activate({
+        let overlay = Rc::clone(overlay);
+        move |_, _| overlay.present()
+    });
+
+    let settings = gio::SimpleAction::new("settings", None);
+    settings.connect_activate({
+        let application = application.clone();
+        move |_, _| preferences::open(&application)
+    });
+
     let toggle = gio::SimpleAction::new("toggle", None);
     toggle.connect_activate({
         let overlay = Rc::clone(overlay);
@@ -133,6 +170,8 @@ fn add_commands(application: &adw::Application, overlay: &Rc<Overlay>) {
         move |_, _| overlay.toggle_positioning()
     });
 
+    application.add_action(&present);
+    application.add_action(&settings);
     application.add_action(&toggle);
     application.add_action(&position);
 }
