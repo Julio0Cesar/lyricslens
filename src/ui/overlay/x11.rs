@@ -28,17 +28,27 @@ const FROM_APPLICATION: u32 = 1;
 /// Every failure here is survivable: the overlay still shows, just as an
 /// ordinary window, so nothing is propagated.
 pub fn keep_above(window: &gtk::ApplicationWindow, bottom_margin: i32) {
-    let margin = bottom_margin;
     window.connect_map(move |window| {
         let Some(id) = window_id(window) else {
             tracing::warn!("not an X11 surface; the overlay will behave as a normal window");
             return;
         };
-        let size = (window.width(), window.height());
-        if let Err(error) = place(id, size, margin) {
+        if let Err(error) = raise(id) {
             tracing::warn!(%error, "could not place the overlay above the other windows");
         }
+        place(window, None, bottom_margin);
     });
+}
+
+/// Moves the window, the only way an X11 client can: by asking for it.
+pub fn place(window: &gtk::ApplicationWindow, left: Option<i32>, bottom_margin: i32) {
+    let Some(id) = window_id(window) else {
+        return;
+    };
+    let size = (window.width(), window.height());
+    if let Err(error) = move_to(id, size, left, bottom_margin) {
+        tracing::debug!(%error, "could not move the overlay");
+    }
 }
 
 fn window_id(window: &gtk::ApplicationWindow) -> Option<Window> {
@@ -47,16 +57,13 @@ fn window_id(window: &gtk::ApplicationWindow) -> Option<Window> {
     Window::try_from(surface.xid()).ok()
 }
 
-fn place(
-    id: Window,
-    size: (i32, i32),
-    bottom_margin: i32,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let (connection, screen) = x11rb::connect(None)?;
-    let screen = &connection.setup().roots[screen];
-    let root = screen.root;
+type Failure = Box<dyn std::error::Error>;
 
-    let atom = |name: &str| -> Result<u32, Box<dyn std::error::Error>> {
+fn raise(id: Window) -> Result<(), Failure> {
+    let (connection, screen) = x11rb::connect(None)?;
+    let root = connection.setup().roots[screen].root;
+
+    let atom = |name: &str| -> Result<u32, Failure> {
         Ok(connection
             .intern_atom(false, name.as_bytes())?
             .reply()?
@@ -75,8 +82,20 @@ fn place(
             event,
         )?;
     }
+    connection.flush()?;
+    Ok(())
+}
 
-    let x = (i32::from(screen.width_in_pixels) - size.0) / 2;
+fn move_to(
+    id: Window,
+    size: (i32, i32),
+    left: Option<i32>,
+    bottom_margin: i32,
+) -> Result<(), Failure> {
+    let (connection, screen) = x11rb::connect(None)?;
+    let screen = &connection.setup().roots[screen];
+
+    let x = left.unwrap_or_else(|| (i32::from(screen.width_in_pixels) - size.0) / 2);
     let y = i32::from(screen.height_in_pixels) - size.1 - bottom_margin;
     connection.configure_window(id, &ConfigureWindowAux::new().x(x).y(y))?;
     connection.flush()?;

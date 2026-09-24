@@ -18,6 +18,9 @@ pub struct Settings {
     pub player: Option<String>,
     /// How far above the bottom of the screen the line sits, in pixels.
     pub bottom_margin: i32,
+    /// How far from the left edge, in pixels. Absent means centred, which is
+    /// what it is until the overlay is dragged somewhere else.
+    pub left_margin: Option<i32>,
     pub font_size: u32,
     /// Manual correction per player, in milliseconds. Positive means the
     /// lyrics run early and have to wait.
@@ -29,6 +32,7 @@ impl Default for Settings {
         Self {
             player: None,
             bottom_margin: 100,
+            left_margin: None,
             font_size: 30,
             offsets: BTreeMap::new(),
         }

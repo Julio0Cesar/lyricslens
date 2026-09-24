@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=LyricsLens
+Comment=Synced lyrics overlay
+Exec=lyricslens
+Icon=lyricslens
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+StartupNotify=false
