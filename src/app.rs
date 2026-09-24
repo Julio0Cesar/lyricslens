@@ -13,16 +13,23 @@ use zbus::Connection;
 use crate::error::Error;
 use crate::lyrics::Lyrics;
 use crate::lyrics::lrclib::Client;
-use crate::lyrics::normalize::from_track;
+use crate::lyrics::normalize::{Query, from_track};
 use crate::media::{Event, Track, mpris};
+use crate::store::{cache, settings::Settings};
 
 /// How long to wait before looking for a player again.
 const RETRY: Duration = Duration::from_secs(2);
+
+/// Names the player to follow, over whatever the settings say.
+const OVERRIDE: &str = "LYRICSLENS_PLAYER";
 
 /// Everything the interface needs to know.
 #[derive(Debug, Clone)]
 pub enum Update {
     Media(Event),
+    /// Which player is being followed, by bus name. The manual offset is kept
+    /// per player, so the interface needs to know whose it is.
+    Player(String),
     /// The lyrics for the track playing now, or nothing found.
     ///
     /// Boxed because it dwarfs every other variant, and a whole song would
@@ -34,7 +41,7 @@ pub enum Update {
 ///
 /// The channel is bounded: if the interface ever stops reading, the worker
 /// waits instead of growing a queue of stale updates.
-pub fn start() -> async_channel::Receiver<Update> {
+pub fn start(settings: Settings) -> async_channel::Receiver<Update> {
     let (sender, receiver) = async_channel::bounded(64);
 
     std::thread::Builder::new()
@@ -50,7 +57,7 @@ pub fn start() -> async_channel::Receiver<Update> {
                     return;
                 }
             };
-            runtime.block_on(run(sender));
+            runtime.block_on(run(sender, settings));
         })
         .expect("spawning a thread");
 
@@ -58,24 +65,38 @@ pub fn start() -> async_channel::Receiver<Update> {
 }
 
 /// Follows whatever is playing, and keeps looking when nothing is.
-async fn run(updates: async_channel::Sender<Update>) {
+async fn run(updates: async_channel::Sender<Update>, settings: Settings) {
+    // The variable wins over the file: it is how a single run is pointed at a
+    // different player without editing anything.
+    let wanted = std::env::var(OVERRIDE)
+        .ok()
+        .filter(|wanted| !wanted.is_empty())
+        .or(settings.player);
+
     loop {
         if updates.is_closed() {
             return;
         }
-        if let Err(error) = once(&updates).await {
+        if let Err(error) = once(&updates, wanted.as_deref()).await {
             tracing::warn!(%error, "lost the player");
         }
         tokio::time::sleep(RETRY).await;
     }
 }
 
-async fn once(updates: &async_channel::Sender<Update>) -> Result<(), Error> {
+async fn once(updates: &async_channel::Sender<Update>, wanted: Option<&str>) -> Result<(), Error> {
     let connection = Connection::session().await?;
-    let Some(name) = mpris::pick(&connection).await? else {
+    let Some(name) = mpris::pick(&connection, wanted).await? else {
         tracing::debug!("no MPRIS player on the bus");
         return Ok(());
     };
+    if updates
+        .send(Update::Player(name.as_str().to_owned()))
+        .await
+        .is_err()
+    {
+        return Ok(());
+    }
 
     let (events, incoming) = async_channel::bounded(64);
     let follower = {
@@ -122,6 +143,13 @@ async fn fetch(client: Client, track: Track, updates: async_channel::Sender<Upda
         return;
     }
 
+    let artist = query.artist.as_deref().unwrap_or_default();
+    if let Some(lyrics) = cache::get(artist, &query.title, track.length) {
+        tracing::info!(lines = lyrics.lines.len(), ?query, "lyrics from the cache");
+        let _ = updates.send(Update::Lyrics(Box::new(Some(lyrics)))).await;
+        return;
+    }
+
     let found = match client.lyrics(&query, track.length).await {
         Ok(found) => found,
         Err(error) => {
@@ -130,9 +158,17 @@ async fn fetch(client: Client, track: Track, updates: async_channel::Sender<Upda
         }
     };
 
-    match &found {
+    let lyrics = found.map(|found| {
+        cache::put(artist, &query.title, track.length, &found.lrc);
+        found.lyrics
+    });
+    report(&query, lyrics.as_ref());
+    let _ = updates.send(Update::Lyrics(Box::new(lyrics))).await;
+}
+
+fn report(query: &Query, lyrics: Option<&Lyrics>) {
+    match lyrics {
         Some(lyrics) => tracing::info!(lines = lyrics.lines.len(), ?query, "lyrics found"),
         None => tracing::info!(?query, "no synced lyrics for this one"),
     }
-    let _ = updates.send(Update::Lyrics(Box::new(found))).await;
 }

@@ -14,25 +14,25 @@ use gtk4 as gtk;
 use gtk4_layer_shell::{Edge, Layer, LayerShell};
 
 use crate::error::Error;
+use crate::store::settings::Settings;
 
 mod x11;
-
-/// How far above the bottom of the screen the line sits.
-const BOTTOM_MARGIN: i32 = 100;
 
 /// Half a fade. One line goes out over this, the next comes in over it.
 const FADE: Duration = Duration::from_millis(140);
 
-const STYLE: &str = "
-window { background: transparent; }
-label {
-    color: white;
-    font-size: 30px;
-    font-weight: 600;
-    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
-    padding: 0 24px;
+fn style(font_size: u32) -> String {
+    format!(
+        "window {{ background: transparent; }}
+         label {{
+             color: white;
+             font-size: {font_size}px;
+             font-weight: 600;
+             text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+             padding: 0 24px;
+         }}"
+    )
 }
-";
 
 pub struct Overlay {
     label: Label,
@@ -48,11 +48,11 @@ struct Fade {
 
 impl Overlay {
     /// Builds the window and puts it on screen.
-    pub fn build(app: &Application) -> Result<Self, Error> {
+    pub fn build(app: &Application, settings: &Settings) -> Result<Self, Error> {
         let display = gtk::gdk::Display::default().ok_or(Error::NoDisplay)?;
 
         let provider = CssProvider::new();
-        provider.load_from_string(STYLE);
+        provider.load_from_string(&style(settings.font_size));
         gtk::style_context_add_provider_for_display(
             &display,
             &provider,
@@ -82,14 +82,14 @@ impl Overlay {
             // is the whole point of the project.
             window.set_layer(Layer::Overlay);
             window.set_anchor(Edge::Bottom, true);
-            window.set_margin(Edge::Bottom, BOTTOM_MARGIN);
+            window.set_margin(Edge::Bottom, settings.bottom_margin);
             // Without this the compositor shrinks every other window, the way
             // it does for a panel.
             window.set_exclusive_zone(-1);
         } else {
             tracing::info!("no layer-shell here; falling back to an X11 surface");
             window.set_decorated(false);
-            x11::keep_above(&window, BOTTOM_MARGIN);
+            x11::keep_above(&window, settings.bottom_margin);
         }
 
         window.present();

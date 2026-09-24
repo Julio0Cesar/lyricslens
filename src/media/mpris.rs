@@ -54,27 +54,23 @@ pub async fn list(connection: &Connection) -> Result<Vec<OwnedBusName>, Error> {
     Ok(players)
 }
 
-/// Names the player to follow, by any part of its bus name.
+/// Picks the player to follow.
 ///
-/// Until there is a settings window, this is the only way to say "that one"
-/// when a browser and a music player are both running.
-const OVERRIDE: &str = "LYRICSLENS_PLAYER";
-
-/// Picks the player to follow: the one that is actually playing, else the first.
-///
-/// Asking each player for its status costs one round-trip per player, which is
-/// fine because this runs when the overlay starts, not on every track.
-pub async fn pick(connection: &Connection) -> Result<Option<OwnedBusName>, Error> {
+/// `wanted` matches any part of a bus name, for when a browser and a music
+/// player are both open. Without it, the one that is actually playing wins,
+/// else the first.
+pub async fn pick(
+    connection: &Connection,
+    wanted: Option<&str>,
+) -> Result<Option<OwnedBusName>, Error> {
     let players = list(connection).await?;
 
-    if let Ok(wanted) = std::env::var(OVERRIDE)
-        && !wanted.is_empty()
-    {
+    if let Some(wanted) = wanted.filter(|wanted| !wanted.is_empty()) {
         let picked = players
             .into_iter()
-            .find(|name| name.as_str().contains(&wanted));
+            .find(|name| name.as_str().contains(wanted));
         if picked.is_none() {
-            tracing::warn!(%wanted, "no player matches {OVERRIDE}");
+            tracing::warn!(wanted, "no player matches the one asked for");
         }
         return Ok(picked);
     }

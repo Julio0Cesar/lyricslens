@@ -19,7 +19,8 @@ async fn a_real_song_comes_back_with_synced_lyrics() {
         .lyrics(&query, Some(Duration::from_secs(238)))
         .await
         .expect("the service answered")
-        .expect("the song is known");
+        .expect("the song is known")
+        .lyrics;
 
     assert!(lyrics.lines.len() > 10, "got {} lines", lyrics.lines.len());
     assert!(lyrics.lines.iter().any(|line| line.sung().is_some()));
@@ -36,7 +37,10 @@ async fn whatever_is_playing_goes_through_the_whole_chain() {
     use zbus::Connection;
 
     let connection = Connection::session().await.expect("a session bus");
-    let Some(name) = mpris::pick(&connection).await.expect("the bus answered") else {
+    let Some(name) = mpris::pick(&connection, None)
+        .await
+        .expect("the bus answered")
+    else {
         eprintln!("no player running");
         return;
     };
@@ -66,7 +70,7 @@ async fn whatever_is_playing_goes_through_the_whole_chain() {
         .lyrics(&query, track.length)
         .await
     {
-        Ok(Some(lyrics)) => eprintln!("{} synced lines", lyrics.lines.len()),
+        Ok(Some(found)) => eprintln!("{} synced lines", found.lyrics.lines.len()),
         Ok(None) => eprintln!("no synced lyrics for this one"),
         // A video that is not a song is the common case here; the point of this
         // check is that the chain runs, not that the service knows the track.
