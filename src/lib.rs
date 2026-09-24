@@ -6,3 +6,4 @@
 pub mod error;
 pub mod lyrics;
 pub mod media;
+pub mod sync;

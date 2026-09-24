@@ -2,6 +2,7 @@
 //! what it plays.
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use zbus::Connection;
@@ -13,6 +14,7 @@ use zbus::zvariant::OwnedValue;
 
 use super::{Event, Track};
 use crate::error::Error;
+use crate::sync::Playback;
 
 /// Every MPRIS player owns a bus name starting with this.
 const PREFIX: &str = "org.mpris.MediaPlayer2.";
@@ -30,6 +32,11 @@ pub trait Player {
 
     #[zbus(property)]
     fn playback_status(&self) -> zbus::Result<String>;
+
+    /// Microseconds into the track. The specification gives this one no change
+    /// signal, so it must not be cached and has to be read on a timer.
+    #[zbus(property(emits_changed_signal = "false"))]
+    fn position(&self) -> zbus::Result<i64>;
 }
 
 /// Bus names of every running MPRIS player, in the order the bus returns them.
@@ -77,6 +84,21 @@ pub fn short_name(name: &OwnedBusName) -> &str {
 
 const PLAYER_INTERFACE: &str = "org.mpris.MediaPlayer2.Player";
 
+/// How often `Position` is read while the song plays.
+///
+/// The flip of the integer second is what anchors the clock, and it can only be
+/// noticed one poll late — so this interval is the floor on how far the overlay
+/// can be off. Twenty reads a second is what it costs.
+const POLL: Duration = Duration::from_millis(50);
+
+/// How long an unchanging `Position` is given before the player is taken at its
+/// word: it does not report one.
+///
+/// Firefox is the case that matters. It answers `Position` with zero forever
+/// while `CanSeek` says true, and without that reading there is nothing to
+/// synchronise against — better to say so than to let the overlay guess.
+const STALL: Duration = Duration::from_secs(3);
+
 /// Reads the current track, then forwards every later change until the channel
 /// closes or the player leaves the bus.
 ///
@@ -113,38 +135,104 @@ pub async fn follow(
         return Ok(());
     }
 
-    while let Some(change) = changes.next().await {
-        let args = change.args()?;
-        tracing::debug!(
-            interface = %args.interface_name,
-            changed = ?args.changed_properties.keys().collect::<Vec<_>>(),
-            invalidated = ?args.invalidated_properties,
-            "properties changed"
-        );
-        if args.interface_name != interface {
-            continue;
-        }
-        let Some(metadata) = args.changed_properties.get("Metadata") else {
-            // Position and volume also arrive here; only Metadata matters now.
-            continue;
-        };
-        let metadata: HashMap<String, OwnedValue> =
-            match metadata.try_clone().and_then(TryInto::try_into) {
-                Ok(metadata) => metadata,
-                Err(error) => {
-                    tracing::warn!(%error, "Metadata arrived with an unexpected type");
+    let mut state = Playback::from_mpris(&player.playback_status().await?);
+    if events.send(Event::Playback(state)).await.is_err() {
+        return Ok(());
+    }
+
+    let mut seen: Option<(Duration, Instant)> = None;
+    let mut stalled = false;
+
+    let mut ticker = tokio::time::interval(POLL);
+    // A tick that arrives late is a tick that is no longer true; skip it rather
+    // than firing a burst to catch up.
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+    loop {
+        tokio::select! {
+            // While the song plays, the position is the only thing that moves.
+            _ = ticker.tick(), if state == Playback::Playing && !stalled => {
+                let at = Instant::now();
+                let micros = match player.position().await {
+                    Ok(micros) => micros,
+                    Err(error) => {
+                        tracing::debug!(%error, "Position is not readable");
+                        continue;
+                    }
+                };
+                let Ok(micros) = u64::try_from(micros) else {
+                    continue;
+                };
+                let reading = Duration::from_micros(micros);
+
+                match seen {
+                    Some((value, since)) if value == reading => {
+                        if at.duration_since(since) >= STALL {
+                            stalled = true;
+                            tracing::warn!(
+                                player = short_name(name),
+                                "the player does not report its position"
+                            );
+                            if events.send(Event::PositionStalled).await.is_err() {
+                                break;
+                            }
+                            continue;
+                        }
+                    }
+                    _ => seen = Some((reading, at)),
+                }
+
+                if events.send(Event::Position { reading, at }).await.is_err() {
+                    break;
+                }
+            }
+
+            change = changes.next() => {
+                let Some(change) = change else { break };
+                let args = change.args()?;
+                if args.interface_name != interface {
                     continue;
                 }
-            };
 
-        let track = Track::from_metadata(&metadata);
-        if track == last {
-            continue;
-        }
-        last = track.clone();
-        tracing::info!(track = ?track, "track changed");
-        if events.send(Event::TrackChanged(track)).await.is_err() {
-            break;
+                if let Some(status) = args.changed_properties.get("PlaybackStatus")
+                    && let Ok(status) = status.downcast_ref::<&str>()
+                {
+                    let next = Playback::from_mpris(status);
+                    if next != state {
+                        state = next;
+                        seen = None;
+                        stalled = false;
+                        tracing::debug!(?state, "playback changed");
+                        if events.send(Event::Playback(state)).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+
+                let Some(metadata) = args.changed_properties.get("Metadata") else {
+                    continue;
+                };
+                let metadata: HashMap<String, OwnedValue> =
+                    match metadata.try_clone().and_then(TryInto::try_into) {
+                        Ok(metadata) => metadata,
+                        Err(error) => {
+                            tracing::warn!(%error, "Metadata arrived with an unexpected type");
+                            continue;
+                        }
+                    };
+
+                let track = Track::from_metadata(&metadata);
+                if track == last {
+                    continue;
+                }
+                last = track.clone();
+                seen = None;
+                stalled = false;
+                tracing::info!(track = ?track, "track changed");
+                if events.send(Event::TrackChanged(track)).await.is_err() {
+                    break;
+                }
+            }
         }
     }
 

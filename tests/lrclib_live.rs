@@ -47,10 +47,15 @@ async fn whatever_is_playing_goes_through_the_whole_chain() {
         let _ = mpris::follow(&connection, &name, sender).await;
     });
 
-    let Event::TrackChanged(track) = tokio::time::timeout(Duration::from_secs(5), events.recv())
-        .await
-        .expect("a track within five seconds")
-        .expect("the channel is open");
+    let track = loop {
+        let event = tokio::time::timeout(Duration::from_secs(5), events.recv())
+            .await
+            .expect("a track within five seconds")
+            .expect("the channel is open");
+        if let Event::TrackChanged(track) = event {
+            break track;
+        }
+    };
     follower.abort();
 
     let query = from_track(&track);
