@@ -8,7 +8,26 @@ use std::time::Duration;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Line {
     pub at: Duration,
-    pub text: String,
+    pub kind: LineKind,
+}
+
+/// A blank line in an LRC file is not a line with no words: it is the moment
+/// the screen has to go quiet. Spelling that out keeps the overlay from
+/// leaving the last line frozen through a whole instrumental.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LineKind {
+    Sung(String),
+    Instrumental,
+}
+
+impl Line {
+    /// The words to show, or `None` while nothing is being sung.
+    pub fn sung(&self) -> Option<&str> {
+        match &self.kind {
+            LineKind::Sung(text) => Some(text),
+            LineKind::Instrumental => None,
+        }
+    }
 }
 
 /// A whole song, in the order it is sung.

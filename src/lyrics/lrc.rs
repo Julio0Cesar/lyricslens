@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use crate::lyrics::{Line, Lyrics};
+use crate::lyrics::{Line, LineKind, Lyrics};
 
 /// Reads a whole LRC file.
 pub fn parse(input: &str) -> Lyrics {
@@ -36,10 +36,15 @@ pub fn parse(input: &str) -> Lyrics {
         }
 
         let text = text.trim();
+        let kind = if text.is_empty() {
+            LineKind::Instrumental
+        } else {
+            LineKind::Sung(text.to_owned())
+        };
         for at in stamps {
             lyrics.lines.push(Line {
                 at,
-                text: text.to_owned(),
+                kind: kind.clone(),
             });
         }
     }
@@ -147,12 +152,16 @@ mod tests {
         line.at.as_millis() as u64
     }
 
+    fn text(line: &Line) -> &str {
+        line.sung().expect("the line is sung")
+    }
+
     #[test]
     fn reads_a_single_line() {
         let lyrics = parse("[00:12.34]hello");
         assert_eq!(lyrics.lines.len(), 1);
         assert_eq!(at(&lyrics.lines[0]), 12_340);
-        assert_eq!(lyrics.lines[0].text, "hello");
+        assert_eq!(text(&lyrics.lines[0]), "hello");
     }
 
     #[test]
@@ -161,14 +170,19 @@ mod tests {
         assert_eq!(lyrics.lines.len(), 2);
         assert_eq!(at(&lyrics.lines[0]), 12_000);
         assert_eq!(at(&lyrics.lines[1]), 90_000);
-        assert!(lyrics.lines.iter().all(|line| line.text == "chorus"));
+        assert!(
+            lyrics
+                .lines
+                .iter()
+                .all(|line| line.sung() == Some("chorus"))
+        );
     }
 
     #[test]
     fn lines_come_out_in_time_order_whatever_the_file_says() {
         let lyrics = parse("[00:30.00]second\n[00:10.00]first");
-        assert_eq!(lyrics.lines[0].text, "first");
-        assert_eq!(lyrics.lines[1].text, "second");
+        assert_eq!(text(&lyrics.lines[0]), "first");
+        assert_eq!(text(&lyrics.lines[1]), "second");
     }
 
     #[test]
@@ -214,7 +228,7 @@ mod tests {
     fn an_unknown_tag_is_ignored_without_dropping_the_line() {
         let lyrics = parse("[xx:whatever][00:01.00]still here");
         assert_eq!(lyrics.lines.len(), 1);
-        assert_eq!(lyrics.lines[0].text, "still here");
+        assert_eq!(text(&lyrics.lines[0]), "still here");
     }
 
     #[test]
@@ -226,7 +240,7 @@ mod tests {
     fn an_unclosed_bracket_does_not_eat_the_file() {
         let lyrics = parse("[00:01.00 broken\n[00:02.00]fine");
         assert_eq!(lyrics.lines.len(), 1);
-        assert_eq!(lyrics.lines[0].text, "fine");
+        assert_eq!(text(&lyrics.lines[0]), "fine");
     }
 
     #[test]
@@ -242,7 +256,27 @@ mod tests {
 
     #[test]
     fn surrounding_whitespace_is_trimmed_from_the_text() {
-        assert_eq!(parse("[00:01.00]   spaced   ").lines[0].text, "spaced");
+        assert_eq!(text(&parse("[00:01.00]   spaced   ").lines[0]), "spaced");
+    }
+
+    #[test]
+    fn a_timestamp_with_no_words_is_an_instrumental_gap() {
+        let lyrics = parse("[00:10.00]last words\n[00:14.00]\n[00:30.00]back again");
+        assert_eq!(lyrics.lines.len(), 3);
+        assert_eq!(lyrics.lines[1].kind, LineKind::Instrumental);
+        assert_eq!(lyrics.lines[1].sung(), None);
+    }
+
+    #[test]
+    fn a_gap_repeats_with_every_timestamp_on_its_line() {
+        let lyrics = parse("[00:10.00][02:00.00]   ");
+        assert_eq!(lyrics.lines.len(), 2);
+        assert!(
+            lyrics
+                .lines
+                .iter()
+                .all(|line| line.kind == LineKind::Instrumental)
+        );
     }
 
     #[test]
