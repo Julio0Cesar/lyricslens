@@ -7,9 +7,11 @@
 //! a channel that both know how to await.
 
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use zbus::Connection;
+
+use crate::sync::Playback;
 use zbus::zvariant::{OwnedValue, Value};
 
 pub mod mpris;
@@ -70,6 +72,16 @@ async fn once(sender: &async_channel::Sender<Event>) -> Result<(), crate::error:
 #[derive(Debug, Clone)]
 pub enum Event {
     TrackChanged(Track),
+    Playback(Playback),
+    /// One `Position` reading, with the instant it was taken. The pair is what
+    /// the clock anchors on; the reading alone says too little.
+    Position {
+        reading: Duration,
+        at: Instant,
+    },
+    /// The player answers `Position` with the same value forever. There is
+    /// nothing to synchronise against.
+    PositionStalled,
 }
 
 /// What is playing, as far as the player is willing to say.

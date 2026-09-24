@@ -86,12 +86,17 @@ async fn a_metadata_change_reaches_the_channel() {
 }
 
 /// Waits for one track, with the same second the milestone promises.
+///
+/// The fake player never plays, so nothing else should come down this channel —
+/// but skipping the other events keeps the test about track changes.
 async fn next(events: &async_channel::Receiver<Event>) -> Track {
-    let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
-        .await
-        .expect("a track within a second")
-        .expect("the channel is open");
-    match event {
-        Event::TrackChanged(track) => track,
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("a track within a second")
+            .expect("the channel is open");
+        if let Event::TrackChanged(track) = event {
+            return track;
+        }
     }
 }
