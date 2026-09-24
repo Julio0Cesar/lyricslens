@@ -36,7 +36,7 @@ pub fn parse(input: &str) -> Lyrics {
         }
 
         let text = text.trim();
-        let kind = if text.is_empty() {
+        let kind = if is_silence(text) {
             LineKind::Instrumental
         } else {
             LineKind::Sung(text.to_owned())
@@ -75,6 +75,15 @@ fn split_tags(line: &str) -> (Vec<String>, &str) {
     }
 
     (tags, rest)
+}
+
+/// Whether a line is a silence dressed up as text.
+///
+/// Files in the wild mark instrumentals with a musical note or a row of dashes
+/// rather than an empty line. Showing that is worse than showing nothing.
+fn is_silence(text: &str) -> bool {
+    text.chars()
+        .all(|c| c.is_whitespace() || "♪♫♬♩•·.-–—_*~".contains(c))
 }
 
 fn read_tag(tag: &str) -> Tag {
@@ -265,6 +274,18 @@ mod tests {
         assert_eq!(lyrics.lines.len(), 3);
         assert_eq!(lyrics.lines[1].kind, LineKind::Instrumental);
         assert_eq!(lyrics.lines[1].sung(), None);
+    }
+
+    #[test]
+    fn a_musical_note_is_a_silence_not_a_word() {
+        for marker in ["♪", "♪♪♪", " ♫ ", "---", "..."] {
+            let lyrics = parse(&format!("[00:10.00]{marker}"));
+            assert_eq!(
+                lyrics.lines[0].kind,
+                LineKind::Instrumental,
+                "on {marker:?}"
+            );
+        }
     }
 
     #[test]

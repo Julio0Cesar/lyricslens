@@ -154,7 +154,9 @@ pub fn open(app: &adw::Application) {
 
     let upcoming = adw::SpinRow::with_range(0.0, 3.0, 1.0);
     upcoming.set_title("Lines still to come");
-    upcoming.set_subtitle("Shown dimmed under the one being sung");
+    upcoming.set_subtitle(
+        "Shown dimmed underneath. At least one is needed for the line to rise into place",
+    );
     upcoming.set_value(f64::from(settings.borrow().upcoming_lines));
     upcoming.connect_value_notify({
         let settings = settings.clone();

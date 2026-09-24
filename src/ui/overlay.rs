@@ -2,12 +2,18 @@
 //!
 //! A plain `gtk::Window`, never libadwaita: its background is opaque and
 //! fights the transparency the whole overlay depends on.
+//!
+//! The lines are one column that only ever scrolls. A line never appears at
+//! the centre out of nothing: it is already on screen underneath, smaller and
+//! fainter, and when its turn comes the whole column slides up by one row
+//! while that same widget grows into place and the one above it leaves.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use gtk::glib::ControlFlow;
+use gtk::pango;
 use gtk::prelude::*;
 use gtk::{Application, ApplicationWindow, CssProvider, Label};
 use gtk4 as gtk;
@@ -18,11 +24,21 @@ use crate::store::settings::Settings;
 
 mod x11;
 
-/// Half a change. One line goes out over this, the next comes in over it.
-const FADE: Duration = Duration::from_millis(160);
+/// How long a row takes to climb into the one above's place.
+///
+/// Short enough to be over before the next line is due: a slide still running
+/// when the song moves on reads as lag, not as motion.
+const SLIDE: Duration = Duration::from_millis(220);
 
-/// How far below its place the incoming line starts, in pixels.
-const RISE: i32 = 22;
+/// The gap between rows.
+const SPACING: i32 = 6;
+
+/// How small a line is while it waits its turn, and how faint.
+const WAITING_SCALE: f64 = 0.7;
+const WAITING_OPACITY: f64 = 0.45;
+
+/// One line that has just left, the one being sung, and three waiting.
+const ROWS: usize = 5;
 
 /// Marks the window while it is being moved, so there is something to grab.
 const POSITIONING: &str = "positioning";
@@ -60,43 +76,117 @@ fn style(settings: &Settings) -> String {
              font-weight: 600;
              {shadow}
          }}
-         window.{OVERLAY} label.upcoming {{
-             font-size: {small}px;
-             font-weight: 400;
-             opacity: 0.55;
-         }}
          window.{OVERLAY} label.unsung {{ opacity: 0.45; }}",
         color = settings.text_color,
         size = settings.font_size,
-        small = (settings.font_size * 7 / 10).max(10),
     )
+}
+
+/// One line on screen.
+///
+/// The same widget carries a line from the bottom of the column to the centre.
+/// That is the whole point: nothing is removed and redrawn somewhere else.
+#[derive(Clone)]
+struct Row {
+    root: gtk::Overlay,
+    text: Label,
+    /// The same words in full colour, clipped to how far the song has gone.
+    sung: Label,
+    clip: gtk::Box,
+}
+
+impl Row {
+    fn new() -> Self {
+        let text = Label::builder()
+            .justify(gtk::Justification::Center)
+            .wrap(true)
+            .halign(gtk::Align::Center)
+            .build();
+        // Laid out exactly like the line underneath — same width, same
+        // centring — so cutting it from the left reveals the same words in the
+        // same places.
+        let sung = Label::builder()
+            .justify(gtk::Justification::Center)
+            .wrap(true)
+            .halign(gtk::Align::Start)
+            .build();
+
+        let clip = gtk::Box::builder()
+            .halign(gtk::Align::Start)
+            .valign(gtk::Align::Fill)
+            .overflow(gtk::Overflow::Hidden)
+            .visible(false)
+            .build();
+        clip.append(&sung);
+
+        let root = gtk::Overlay::builder()
+            .child(&text)
+            .halign(gtk::Align::Center)
+            .build();
+        root.add_overlay(&clip);
+
+        Self {
+            root,
+            text,
+            sung,
+            clip,
+        }
+    }
+
+    fn set_text(&self, text: &str) {
+        self.text.set_text(text);
+        self.sung.set_text(text);
+        self.root.set_visible(!text.is_empty());
+    }
+
+    fn text(&self) -> String {
+        self.text.text().to_string()
+    }
+
+    /// How big and how bright, from 0 while waiting to 1 while being sung.
+    fn set_weight(&self, weight: f64) {
+        let weight = weight.clamp(0.0, 1.0);
+        let scale = WAITING_SCALE + (1.0 - WAITING_SCALE) * weight;
+        let attributes = pango::AttrList::new();
+        attributes.insert(pango::AttrFloat::new_scale(scale));
+        self.text.set_attributes(Some(&attributes));
+        self.sung.set_attributes(Some(&attributes));
+        self.root
+            .set_opacity(WAITING_OPACITY + (1.0 - WAITING_OPACITY) * weight);
+    }
+
+    /// Shrinking and fading as it leaves the top of the column.
+    fn set_leaving(&self, progress: f64) {
+        let attributes = pango::AttrList::new();
+        attributes.insert(pango::AttrFloat::new_scale(1.0 - 0.15 * progress));
+        self.text.set_attributes(Some(&attributes));
+        self.sung.set_attributes(Some(&attributes));
+        self.root.set_opacity(1.0 - progress);
+    }
 }
 
 #[derive(Clone)]
 pub struct Overlay {
     window: ApplicationWindow,
-    /// The line being sung, and the ones still to come under it.
+    /// The strip the lines sit on, background and all.
     lines: gtk::Box,
-    /// Fixed height, so the line can slide inside it without the surface
-    /// growing and shrinking on every frame.
-    stage: gtk::Box,
-    current: Label,
-    /// The same words in full colour, clipped to how far the song has gone.
-    sung: Label,
-    clip: gtk::Box,
-    upcoming: Label,
+    /// Shows a fixed number of rows of the column, and scrolls between them.
+    viewport: gtk::ScrolledWindow,
+    column: gtk::Box,
+    rows: Vec<Row>,
     provider: CssProvider,
-    fade: Rc<RefCell<Fade>>,
+    motion: Rc<RefCell<Motion>>,
     placement: Rc<RefCell<Placement>>,
     /// False where the compositor has no layer-shell and the window fell back
     /// to X11. Every placement decision differs between the two.
     layer_shell: bool,
 }
 
-/// What the animation is doing, and what it has been asked to show next.
-struct Fade {
-    shown: Option<String>,
-    wanted: Option<String>,
+/// What is on screen, and what is waiting to be.
+struct Motion {
+    /// Row 0 is the line being sung; the rest are waiting their turn.
+    shown: Vec<String>,
+    wanted: Vec<String>,
     running: bool,
 }
 
@@ -121,55 +211,44 @@ impl Overlay {
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
 
-        let current = Label::builder()
-            .justify(gtk::Justification::Center)
-            .wrap(true)
-            .opacity(0.0)
-            .build();
-        let sung = Label::builder()
-            .justify(gtk::Justification::Center)
-            .wrap(true)
-            .xalign(0.0)
-            .build();
-
-        // The bright copy sits on top of the dim one and is cut off at the
-        // point the song has reached.
-        let clip = gtk::Box::builder()
-            .halign(gtk::Align::Start)
-            .overflow(gtk::Overflow::Hidden)
-            .visible(false)
-            .build();
-        clip.append(&sung);
-
-        let stacked = gtk::Overlay::builder().child(&current).build();
-        stacked.add_overlay(&clip);
-
-        let stage = gtk::Box::builder()
+        let column = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
-            .overflow(gtk::Overflow::Hidden)
+            .spacing(SPACING)
+            .halign(gtk::Align::Center)
+            .valign(gtk::Align::Start)
             .build();
-        stage.append(&stacked);
-        let upcoming = Label::builder()
-            .justify(gtk::Justification::Center)
-            .wrap(true)
-            .visible(false)
+
+        let rows: Vec<Row> = (0..ROWS).map(|_| Row::new()).collect();
+        for (index, row) in rows.iter().enumerate() {
+            row.root.set_visible(false);
+            row.set_weight(if index == 1 { 1.0 } else { 0.0 });
+            column.append(&row.root);
+        }
+
+        // A window onto the column, scrolled by hand. Doing the clipping any
+        // other way means a box that grows by exactly as much as the column
+        // moves, and the movement cancels itself out on screen.
+        let viewport = gtk::ScrolledWindow::builder()
+            .child(&column)
+            .hscrollbar_policy(gtk::PolicyType::Never)
+            .vscrollbar_policy(gtk::PolicyType::External)
+            .propagate_natural_height(false)
+            .propagate_natural_width(true)
             .build();
-        upcoming.add_css_class("upcoming");
 
         let lines = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
-            .spacing(4)
             .halign(gtk::Align::Center)
             .valign(gtk::Align::End)
+            .visible(false)
             .build();
         lines.add_css_class("lines");
-        lines.append(&stage);
-        lines.append(&upcoming);
+        lines.append(&viewport);
 
         let window = ApplicationWindow::builder()
             .application(app)
             .default_width(900)
-            .default_height(160)
+            .default_height(220)
             .child(&lines)
             .build();
         window.add_css_class(OVERLAY);
@@ -196,15 +275,13 @@ impl Overlay {
         let overlay = Self {
             window,
             lines,
-            stage,
-            current,
-            sung,
-            clip,
-            upcoming,
+            viewport,
+            column,
+            rows,
             provider,
-            fade: Rc::new(RefCell::new(Fade {
-                shown: None,
-                wanted: None,
+            motion: Rc::new(RefCell::new(Motion {
+                shown: vec![String::new(); ROWS],
+                wanted: vec![String::new(); ROWS],
                 running: false,
             })),
             placement: Rc::new(RefCell::new(Placement {
@@ -224,55 +301,140 @@ impl Overlay {
         Ok(overlay)
     }
 
-    /// Shows a line, or nothing at all during an instrumental.
-    pub fn show(&self, line: Option<&str>) {
-        let line = line.map(str::to_owned);
-        {
-            let mut fade = self.fade.borrow_mut();
-            if fade.wanted == line || (!fade.running && fade.shown == line) {
-                return;
-            }
-            fade.wanted = line;
-            if fade.running {
-                // The animation running now will pick the new text up on its way.
-                return;
-            }
-            fade.running = true;
+    /// The line being sung and the ones waiting, as of now.
+    ///
+    /// Called on every tick. Nothing happens unless something changed; when
+    /// the line does change, the column slides by one row rather than swapping
+    /// its contents where they stand.
+    pub fn show(&self, current: Option<&str>, upcoming: &[String]) {
+        let mut wanted = vec![current.unwrap_or_default().to_owned()];
+        wanted.extend(upcoming.iter().take(ROWS - 1).cloned());
+        wanted.resize(ROWS, String::new());
+
+        let (changed, moved, running) = {
+            let mut motion = self.motion.borrow_mut();
+            let changed = motion.wanted != wanted;
+            motion.wanted = wanted.clone();
+            // The line moved on only if what is being sung now is the line
+            // that was waiting directly underneath.
+            let moved = motion.shown[0] != wanted[0];
+            (changed, moved, motion.running)
+        };
+
+        if !changed || running {
+            return;
         }
-        self.animate();
+        if moved && !self.rows[2].text().is_empty() && self.rows[2].text() == wanted[0] {
+            self.motion.borrow_mut().running = true;
+            self.slide();
+            return;
+        }
+        // Nothing to slide from: a new song, a seek, or only the tail changed.
+        self.settle(&wanted);
+    }
+
+    /// Puts the lines where they belong, with no movement.
+    ///
+    /// Row 0 is the line that has already gone; it stays in the column so the
+    /// next one has somewhere to climb from, and the viewport is scrolled past
+    /// it.
+    fn settle(&self, wanted: &[String]) {
+        let waiting = usize::from(self.placement.borrow().settings.upcoming_lines);
+        let previous = self.rows[1].text();
+
+        self.rows[0].set_text(&previous);
+        self.rows[0].set_weight(1.0);
+        for (index, row) in self.rows.iter().enumerate().skip(1) {
+            let text = if index <= waiting + 1 {
+                wanted.get(index - 1).cloned().unwrap_or_default()
+            } else {
+                String::new()
+            };
+            row.set_text(&text);
+            row.set_weight(if index == 1 { 1.0 } else { 0.0 });
+        }
+
+        self.fit();
+        self.lines.set_visible(!wanted[0].is_empty());
+        self.motion.borrow_mut().shown = wanted.to_vec();
+    }
+
+    /// Sizes the window onto the column, and scrolls it to the line being
+    /// sung.
+    fn fit(&self) {
+        let waiting = usize::from(self.placement.borrow().settings.upcoming_lines);
+        let visible = 1 + waiting;
+
+        let mut height = 0;
+        for row in self.rows.iter().skip(1).take(visible) {
+            if !row.root.is_visible() {
+                continue;
+            }
+            let (_, natural, _, _) = row.root.measure(gtk::Orientation::Vertical, -1);
+            height += natural + SPACING;
+        }
+        self.viewport
+            .set_size_request(-1, (height - SPACING).max(1));
+
+        let (_, gone, _, _) = self.rows[0].root.measure(gtk::Orientation::Vertical, -1);
+        self.viewport
+            .vadjustment()
+            .set_value(f64::from(gone + SPACING));
+    }
+
+    /// Scrolls the column up by one row, over time.
+    fn slide(&self) {
+        let adjustment = self.viewport.vadjustment();
+        let from = adjustment.value();
+        let (_, step, _, _) = self.rows[1].root.measure(gtk::Orientation::Vertical, -1);
+        let step = f64::from(step + SPACING);
+
+        let started = Instant::now();
+        let overlay = self.clone();
+
+        self.column.add_tick_callback(move |_, _| {
+            let progress = (started.elapsed().as_secs_f64() / SLIDE.as_secs_f64()).min(1.0);
+            let eased = 1.0 - (1.0 - progress).powi(3);
+
+            adjustment.set_value(from + step * eased);
+            overlay.rows[1].set_leaving(eased);
+            overlay.rows[2].set_weight(eased);
+
+            if progress < 1.0 {
+                return ControlFlow::Continue;
+            }
+
+            // The row that climbed is now the one being sung, and every text
+            // moves down a place so the same thing can happen again.
+            let wanted = overlay.motion.borrow().wanted.clone();
+            overlay.motion.borrow_mut().running = false;
+            overlay.settle(&wanted);
+            ControlFlow::Break
+        });
     }
 
     /// How far through the line the song is, from 0 to 1.
     ///
-    /// Does nothing unless karaoke is on, and nothing while the line is
-    /// changing: a half-drawn fill under a sliding line reads as a glitch.
+    /// Does nothing unless karaoke is on, and nothing while the column is
+    /// moving: a half-drawn fill under a sliding line reads as a glitch.
     pub fn show_progress(&self, progress: Option<f64>) {
         let karaoke = self.placement.borrow().settings.karaoke;
-        let Some(progress) = progress.filter(|_| karaoke && !self.fade.borrow().running) else {
-            self.clip.set_visible(false);
-            self.current.remove_css_class("unsung");
+        let row = &self.rows[1];
+        let Some(progress) = progress.filter(|_| karaoke && !self.motion.borrow().running) else {
+            row.clip.set_visible(false);
+            row.text.remove_css_class("unsung");
             return;
         };
 
-        let width = self.current.width();
+        let width = row.text.width();
         if width <= 0 {
             return;
         }
-        self.current.add_css_class("unsung");
-        self.sung.set_width_request(width);
-        self.clip
-            .set_width_request(((f64::from(width) * progress) as i32).max(1));
-        self.clip.set_visible(true);
-    }
-
-    /// The lines still to come, under the one being sung.
-    pub fn show_upcoming(&self, lines: &[String]) {
-        if lines.is_empty() {
-            self.upcoming.set_visible(false);
-            return;
-        }
-        self.upcoming.set_text(&lines.join("\n"));
-        self.upcoming.set_visible(true);
+        row.text.add_css_class("unsung");
+        row.sung.set_size_request(width, -1);
+        row.clip
+            .set_size_request(((f64::from(width) * progress) as i32).max(1), -1);
+        row.clip.set_visible(true);
     }
 
     /// Takes the settings again, after the preferences window changed them.
@@ -286,7 +448,7 @@ impl Overlay {
         }
         if movable {
             self.window.add_css_class(POSITIONING);
-            self.current.set_opacity(1.0);
+            self.lines.set_visible(true);
         } else {
             self.window.remove_css_class(POSITIONING);
         }
@@ -330,9 +492,10 @@ impl Overlay {
         if positioning {
             self.window.add_css_class(POSITIONING);
             self.window.set_visible(true);
-            self.current.set_opacity(1.0);
-            if self.current.text().is_empty() {
-                self.current.set_text("drag me");
+            self.lines.set_visible(true);
+            if self.rows[1].text().is_empty() {
+                self.rows[1].set_text("drag me");
+                self.rows[1].set_weight(1.0);
             }
         } else {
             self.window.remove_css_class(POSITIONING);
@@ -492,63 +655,5 @@ impl Overlay {
             return 0;
         };
         (monitor.geometry().width() - self.lines.width().max(1)) / 2
-    }
-
-    /// Fades the current line out, swaps the text, fades the next one in.
-    ///
-    /// Driven by the frame clock rather than a timer, so it runs at whatever
-    /// rate the screen actually refreshes, and stops as soon as it is done.
-    fn animate(&self) {
-        let started = Instant::now();
-        let fade = Rc::clone(&self.fade);
-        let current = self.current.clone();
-        let sung = self.sung.clone();
-        let clip = self.clip.clone();
-        let stage = self.stage.clone();
-        let swapped = std::cell::Cell::new(false);
-
-        self.lines.add_tick_callback(move |_, _| {
-            let elapsed = started.elapsed();
-
-            // Out: the line fades where it stands.
-            if elapsed < FADE {
-                current.set_opacity(1.0 - elapsed.as_secs_f64() / FADE.as_secs_f64());
-                return ControlFlow::Continue;
-            }
-
-            if !swapped.get() {
-                swapped.set(true);
-                clip.set_visible(false);
-                let mut state = fade.borrow_mut();
-                state.shown = state.wanted.clone();
-                let text = state.shown.clone().unwrap_or_default();
-                current.set_text(&text);
-                sung.set_text(&text);
-                // Fixing the height here is what lets the line slide inside a
-                // box that does not resize, so the surface stays put.
-                let (_, natural, _, _) = current.measure(gtk::Orientation::Vertical, -1);
-                stage.set_size_request(-1, natural.max(1));
-            }
-
-            if fade.borrow().shown.is_none() {
-                fade.borrow_mut().running = false;
-                current.set_opacity(0.0);
-                current.set_margin_top(0);
-                return ControlFlow::Break;
-            }
-
-            // In: it comes up from below as it appears.
-            let progress = ((elapsed - FADE).as_secs_f64() / FADE.as_secs_f64()).min(1.0);
-            let eased = 1.0 - (1.0 - progress).powi(3);
-            current.set_opacity(eased);
-            current.set_margin_top((f64::from(RISE) * (1.0 - eased)) as i32);
-
-            if progress >= 1.0 {
-                current.set_margin_top(0);
-                fade.borrow_mut().running = false;
-                return ControlFlow::Break;
-            }
-            ControlFlow::Continue
-        });
     }
 }
