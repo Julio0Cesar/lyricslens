@@ -1,113 +1,98 @@
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use gtk::gdk::Display;
 use gtk::prelude::*;
-use gtk::{Application, ApplicationWindow, CssProvider, Label};
+use gtk::{Application, glib};
 use gtk4 as gtk;
-use gtk4_layer_shell::{Edge, Layer, LayerShell};
-
-use lyricslens::error;
-use lyricslens::media;
+use lyricslens::app::{self, Update};
+use lyricslens::lyrics::Lyrics;
 use lyricslens::media::{Event, Track};
 use lyricslens::sync::clock::Clock;
+use lyricslens::ui::overlay::Overlay;
 
-fn main() -> gtk::glib::ExitCode {
+/// How often the overlay asks the clock which line is being sung.
+///
+/// The screen redraws at its own rate; this only decides how late a line can
+/// be, and a tenth of a second is below what anyone sees.
+const TICK: Duration = Duration::from_millis(100);
+
+fn main() -> glib::ExitCode {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let events = media::start();
+    let updates = app::start();
 
-    let app = Application::builder()
+    let application = Application::builder()
         .application_id("io.github.julio0cesar.lyricslens")
         .build();
 
-    app.connect_activate(move |app| {
-        let Some(display) = Display::default() else {
-            tracing::error!("{}", error::Error::NoDisplay);
-            return;
+    application.connect_activate(move |application| {
+        let overlay = match Overlay::build(application) {
+            Ok(overlay) => overlay,
+            Err(error) => {
+                tracing::error!(%error, "could not open the overlay");
+                return;
+            }
         };
 
-        let provider = CssProvider::new();
-        provider.load_from_string(
-            "window { background: transparent; }
-             label { color: white; font-size: 28px; }",
-        );
-        gtk::style_context_add_provider_for_display(
-            &display,
-            &provider,
-            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-        );
-        let label = Label::new(Some("waiting for a player"));
+        let state = Rc::new(RefCell::new(State::default()));
 
-        let window = ApplicationWindow::builder()
-            .application(app)
-            .default_width(600)
-            .default_height(200)
-            .child(&label)
-            .build();
-
-        window.init_layer_shell();
-        window.set_layer(Layer::Overlay);
-        window.set_anchor(Edge::Bottom, true);
-        window.set_margin(Edge::Bottom, 100);
-        window.set_exclusive_zone(-1);
-
-        window.present();
-
-        // Until there are lyrics to show, the overlay displays the track and
-        // where the clock thinks it is. That is what proves both halves work.
-        let events = events.clone();
-        gtk::glib::spawn_future_local(async move {
-            let mut clock = Clock::new(0);
-            let mut track = Track::default();
-            let mut stalled = false;
-
-            while let Ok(event) = events.recv().await {
-                match event {
-                    Event::TrackChanged(next) => {
-                        clock.reset();
-                        stalled = false;
-                        track = next;
-                    }
-                    Event::Playback(state) => {
-                        stalled = false;
-                        clock.playback(state, Instant::now());
-                    }
-                    Event::PositionStalled => stalled = true,
-                    Event::Position { reading, at } => {
-                        clock.sample(reading, at);
-                    }
-                }
-                let position = if stalled {
-                    None
-                } else {
-                    clock.position(Instant::now())
-                };
-                label.set_text(&describe(&track, position, stalled));
+        let updates = updates.clone();
+        let reader = Rc::clone(&state);
+        glib::spawn_future_local(async move {
+            while let Ok(update) = updates.recv().await {
+                reader.borrow_mut().apply(update);
             }
+        });
+
+        glib::timeout_add_local(TICK, move || {
+            overlay.show(state.borrow().line());
+            glib::ControlFlow::Continue
         });
     });
 
-    app.run()
+    application.run()
 }
 
-fn describe(track: &Track, position: Option<Duration>, stalled: bool) -> String {
-    if track.is_empty() {
-        return "nothing playing".to_owned();
+/// What the overlay is showing, and everything it takes to decide that.
+#[derive(Default)]
+struct State {
+    track: Track,
+    lyrics: Option<Lyrics>,
+    clock: Option<Clock>,
+    stalled: bool,
+}
+
+impl State {
+    fn apply(&mut self, update: Update) {
+        match update {
+            Update::Lyrics(lyrics) => self.lyrics = *lyrics,
+            Update::Media(Event::TrackChanged(track)) => {
+                self.track = track;
+                self.stalled = false;
+                self.clock.get_or_insert_with(|| Clock::new(0)).reset();
+            }
+            Update::Media(Event::Playback(state)) => {
+                self.stalled = false;
+                self.clock
+                    .get_or_insert_with(|| Clock::new(0))
+                    .playback(state, Instant::now());
+            }
+            Update::Media(Event::Position { reading, at }) => {
+                self.clock
+                    .get_or_insert_with(|| Clock::new(0))
+                    .sample(reading, at);
+            }
+            Update::Media(Event::PositionStalled) => self.stalled = true,
+        }
     }
 
-    let title = track.title.as_deref().unwrap_or("unknown track");
-    let mut line = if track.artists.is_empty() {
-        title.to_owned()
-    } else {
-        format!("{} — {}", track.artists.join(", "), title)
-    };
-    if let Some(position) = position {
-        let seconds = position.as_secs();
-        line.push_str(&format!("  ·  {}:{:02}", seconds / 60, seconds % 60));
-    } else if stalled {
-        line.push_str("  ·  this player does not report its position");
+    /// The words on screen right now.
+    fn line(&self) -> Option<&str> {
+        let lyrics = self.lyrics.as_ref()?;
+        let position = self.clock.as_ref()?.position(Instant::now())?;
+        lyrics.line_at(position)?.sung()
     }
-    line
 }
