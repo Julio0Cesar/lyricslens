@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use gtk::prelude::*;
-use gtk::{Application, glib};
+use adw::prelude::*;
+use gtk::glib;
 use gtk4 as gtk;
 use lyricslens::app::{self, Update};
 use lyricslens::lyrics::Lyrics;
@@ -11,6 +11,7 @@ use lyricslens::media::{Event, Track};
 use lyricslens::store::settings::Settings;
 use lyricslens::sync::clock::Clock;
 use lyricslens::ui::overlay::Overlay;
+use lyricslens::ui::settings as preferences;
 
 /// How often the overlay asks the clock which line is being sung.
 ///
@@ -23,15 +24,21 @@ fn main() -> glib::ExitCode {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let settings = Settings::load();
-    let updates = app::start(settings.clone());
-
-    let application = Application::builder()
+    let application = adw::Application::builder()
         .application_id("io.github.julio0cesar.lyricslens")
         .build();
 
+    if preferences::requested() {
+        application.connect_activate(preferences::open);
+        // GTK would try to make sense of our own flags otherwise.
+        return application.run_with_args::<&str>(&[]);
+    }
+
+    let settings = Settings::load();
+    let updates = app::start(settings.clone());
+
     application.connect_activate(move |application| {
-        let overlay = match Overlay::build(application, &settings) {
+        let overlay = match Overlay::build(application.upcast_ref(), &settings) {
             Ok(overlay) => overlay,
             Err(error) => {
                 tracing::error!(%error, "could not open the overlay");
@@ -55,7 +62,7 @@ fn main() -> glib::ExitCode {
         });
     });
 
-    application.run()
+    application.run_with_args::<&str>(&[])
 }
 
 /// What the overlay is showing, and everything it takes to decide that.

@@ -17,12 +17,24 @@ cargo build
 cargo run
 ```
 
-`LYRICSLENS_PLAYER` picks a player by any part of its bus name, for when more
-than one is running:
+The preferences window:
+
+```
+cargo run -- --settings
+```
+
+`LYRICSLENS_PLAYER` picks a player by any part of its bus name for one run,
+over whatever the settings say:
 
 ```
 LYRICSLENS_PLAYER=spotify cargo run
 ```
+
+## Where it keeps things
+
+Settings are TOML at `~/.config/lyricslens/settings.toml`, readable and
+editable by hand. Fetched lyrics are cached under `~/.cache/lyricslens/`, one
+LRC file per recording, so a song already seen works with the network off.
 
 ## What it needs from a player
 
