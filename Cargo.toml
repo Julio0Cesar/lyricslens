@@ -12,6 +12,7 @@ async-channel = "2.5.0"
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 gtk4 = { version = "0.11", features = ["v4_12"] }
 gtk4-layer-shell = "0.8"
+regex = "1.13.1"
 thiserror = "2.0.20"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time"] }
 tracing = "0.1.44"
