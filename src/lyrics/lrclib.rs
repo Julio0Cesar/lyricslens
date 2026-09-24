@@ -26,6 +26,7 @@ const AGENT: &str = concat!(
 /// How far a search result's duration may sit from the one being played.
 const TOLERANCE: Duration = Duration::from_secs(4);
 
+#[derive(Clone)]
 pub struct Client {
     http: reqwest::Client,
     base: String,

@@ -48,4 +48,84 @@ impl Lyrics {
     pub fn is_empty(&self) -> bool {
         self.lines.is_empty()
     }
+
+    /// The line being sung at `position`, or `None` before the first one.
+    ///
+    /// An instrumental gap is a line like any other here: it is found, and it
+    /// has no words, which is how the screen goes quiet.
+    pub fn line_at(&self, position: Duration) -> Option<&Line> {
+        let position = self.shifted(position);
+        // The last line whose moment has already passed.
+        let index = self.lines.partition_point(|line| line.at <= position);
+        index.checked_sub(1).map(|index| &self.lines[index])
+    }
+
+    /// The file's own `[offset:]`, applied to a position before looking it up.
+    fn shifted(&self, position: Duration) -> Duration {
+        let offset = Duration::from_millis(self.offset_ms.unsigned_abs());
+        if self.offset_ms >= 0 {
+            position + offset
+        } else {
+            position.saturating_sub(offset)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn song() -> Lyrics {
+        lrc::parse("[00:10.00]first\n[00:20.00]\n[00:30.00]second")
+    }
+
+    #[test]
+    fn nothing_is_sung_before_the_first_line() {
+        assert!(song().line_at(Duration::from_secs(5)).is_none());
+    }
+
+    #[test]
+    fn a_line_holds_until_the_next_one() {
+        let song = song();
+        assert_eq!(
+            song.line_at(Duration::from_secs(10)).unwrap().sung(),
+            Some("first")
+        );
+        assert_eq!(
+            song.line_at(Duration::from_secs(19)).unwrap().sung(),
+            Some("first")
+        );
+    }
+
+    #[test]
+    fn a_gap_clears_the_screen() {
+        assert_eq!(
+            song().line_at(Duration::from_secs(25)).unwrap().sung(),
+            None
+        );
+    }
+
+    #[test]
+    fn the_last_line_stays_to_the_end() {
+        assert_eq!(
+            song().line_at(Duration::from_secs(600)).unwrap().sung(),
+            Some("second")
+        );
+    }
+
+    #[test]
+    fn the_files_own_offset_moves_the_lookup() {
+        let mut song = song();
+        // The file says its lyrics run half a second late.
+        song.offset_ms = 500;
+        assert_eq!(
+            song.line_at(Duration::from_millis(9_600)).unwrap().sung(),
+            Some("first")
+        );
+    }
+
+    #[test]
+    fn an_empty_song_has_no_lines() {
+        assert!(Lyrics::default().line_at(Duration::from_secs(1)).is_none());
+    }
 }
