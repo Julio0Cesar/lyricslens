@@ -9,6 +9,12 @@
 use ksni::blocking::TrayMethods;
 use ksni::menu::{MenuItem, StandardItem};
 
+/// The icon is carried in the binary and handed to the bar as pixels.
+///
+/// Naming a theme icon would work only once the desktop has rescanned its
+/// icon directories, which an install into `~/.local` does not make it do.
+const ICON: &[u8] = include_bytes!("../../packaging/icons/128.png");
+
 /// What the menu asks the interface to do. The tray lives on its own thread,
 /// so it can only send; the GTK side does the work.
 #[derive(Debug, Clone, Copy)]
@@ -21,6 +27,8 @@ pub enum Command {
 
 struct Tray {
     commands: async_channel::Sender<Command>,
+    /// Decoded once: the bar asks for it again on every redraw.
+    icon: Option<ksni::Icon>,
 }
 
 impl Tray {
@@ -42,9 +50,21 @@ impl ksni::Tray for Tray {
         "LyricsLens".to_owned()
     }
 
-    /// The name the installer writes into the icon theme.
+    fn icon_pixmap(&self) -> Vec<ksni::Icon> {
+        self.icon.clone().into_iter().collect()
+    }
+
+    /// Named only when there are no pixels to give.
+    ///
+    /// A bar that is handed both prefers the name, and then draws whatever its
+    /// icon theme happens to hold — which, for a program installed into
+    /// `~/.local`, is often a stale copy or nothing at all.
     fn icon_name(&self) -> String {
-        "lyricslens".to_owned()
+        if self.icon.is_some() {
+            String::new()
+        } else {
+            "lyricslens".to_owned()
+        }
     }
 
     /// A left click is the thing people try first.
@@ -83,6 +103,31 @@ impl ksni::Tray for Tray {
     }
 }
 
+/// Decodes the icon into what the protocol asks for: ARGB32, most significant
+/// byte first.
+fn icon() -> Option<ksni::Icon> {
+    let decoder = png::Decoder::new(std::io::Cursor::new(ICON));
+    let mut reader = decoder.read_info().ok()?;
+    let mut pixels = vec![0; reader.output_buffer_size()?];
+    let info = reader.next_frame(&mut pixels).ok()?;
+
+    if info.color_type != png::ColorType::Rgba || info.bit_depth != png::BitDepth::Eight {
+        tracing::debug!("the icon is not 8-bit RGBA");
+        return None;
+    }
+
+    let mut data = Vec::with_capacity(pixels.len());
+    for pixel in pixels[..info.buffer_size()].chunks_exact(4) {
+        data.extend_from_slice(&[pixel[3], pixel[0], pixel[1], pixel[2]]);
+    }
+
+    Some(ksni::Icon {
+        width: i32::try_from(info.width).ok()?,
+        height: i32::try_from(info.height).ok()?,
+        data,
+    })
+}
+
 /// Puts the icon in the bar and hands back what the menu asks for.
 ///
 /// A desktop with no status bar simply has nowhere to put it; the overlay runs
@@ -92,11 +137,17 @@ pub fn start() -> async_channel::Receiver<Command> {
 
     std::thread::Builder::new()
         .name("tray".to_owned())
-        .spawn(move || match (Tray { commands }).spawn() {
-            // The handle has to outlive the icon, and the icon lives as long
-            // as the program does.
-            Ok(handle) => std::mem::forget(handle),
-            Err(error) => tracing::info!(%error, "no status bar to put an icon in"),
+        .spawn(move || {
+            let tray = Tray {
+                commands,
+                icon: icon(),
+            };
+            match tray.spawn() {
+                // The handle has to outlive the icon, and the icon lives as long
+                // as the program does.
+                Ok(handle) => std::mem::forget(handle),
+                Err(error) => tracing::info!(%error, "no status bar to put an icon in"),
+            }
         })
         .expect("spawning a thread");
 
