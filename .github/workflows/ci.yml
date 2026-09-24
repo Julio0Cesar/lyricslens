@@ -25,6 +25,7 @@ jobs:
             libgtk-4-dev \
             libgtk4-layer-shell-dev \
             libx11-dev \
+            libadwaita-1-dev \
             dbus
 
       - uses: dtolnay/rust-toolchain@stable
