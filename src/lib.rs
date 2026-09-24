@@ -4,5 +4,5 @@
 //! integration tests drive.
 
 pub mod error;
+pub mod lyrics;
 pub mod media;
-pub mod mpris;
