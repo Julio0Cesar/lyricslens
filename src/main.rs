@@ -120,6 +120,19 @@ fn main() -> glib::ExitCode {
         });
 
         let state = Rc::new(RefCell::new(State::new(settings.clone())));
+        // The preferences window writes the file and asks for this: both the
+        // window and what decides its contents have to read it again.
+        let reload = gio::SimpleAction::new("reload", None);
+        reload.connect_activate({
+            let overlay = Rc::clone(&overlay);
+            let state = Rc::clone(&state);
+            move |_, _| {
+                let settings = Settings::load();
+                overlay.reload(&settings);
+                state.borrow_mut().settings = settings;
+            }
+        });
+        application.add_action(&reload);
 
         let updates = updates.clone();
         let reader = Rc::clone(&state);
@@ -130,7 +143,9 @@ fn main() -> glib::ExitCode {
         });
 
         glib::timeout_add_local(TICK, move || {
-            overlay.show(state.borrow().line().as_deref());
+            let state = state.borrow();
+            overlay.show(state.line().as_deref());
+            overlay.show_upcoming(&state.upcoming());
             glib::ControlFlow::Continue
         });
     });
@@ -256,6 +271,20 @@ impl State {
             }
             Update::Media(Event::PositionStalled) => self.stalled = true,
         }
+    }
+
+    /// The lines still to come, as many as the settings ask for.
+    fn upcoming(&self) -> Vec<String> {
+        let wanted = usize::from(self.settings.upcoming_lines);
+        if wanted == 0 {
+            return Vec::new();
+        }
+        let (Some(lyrics), Some(position)) =
+            (self.lyrics.as_ref(), self.clock.position(Instant::now()))
+        else {
+            return Vec::new();
+        };
+        lyrics.after(position, wanted)
     }
 
     /// The words on screen right now.

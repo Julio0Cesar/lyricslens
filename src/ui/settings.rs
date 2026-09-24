@@ -5,11 +5,9 @@
 //! whose transparency libadwaita's own background would fight.
 
 use adw::prelude::*;
+use gtk4 as gtk;
 
 use crate::store::settings::Settings;
-
-/// What a change to the settings is worth saying out loud.
-const RESTART: &str = "Changes apply the next time LyricsLens starts.";
 
 /// Opens the preferences window, saving each change as it is made.
 pub fn open(app: &adw::Application) {
@@ -35,17 +33,49 @@ pub fn open(app: &adw::Application) {
         .build();
     player_row.connect_changed({
         let settings = settings.clone();
+        let app = app.clone();
         move |row| {
             let text = row.text().trim().to_owned();
             settings.borrow_mut().player = (!text.is_empty()).then_some(text);
-            save(&settings.borrow());
+            save(&settings.borrow(), &app);
         }
     });
     player.add(&player_row);
 
+    // A layer surface belongs to one screen, so this is a choice rather than a
+    // drag across the edge.
+    let screens = connectors();
+    let mut names: Vec<&str> = vec!["Whichever the compositor picks"];
+    names.extend(screens.iter().map(String::as_str));
+    let screen = adw::ComboRow::builder()
+        .title("Screen")
+        .model(&gtk::StringList::new(&names))
+        .selected(
+            settings
+                .borrow()
+                .monitor
+                .as_ref()
+                .and_then(|wanted| screens.iter().position(|name| name == wanted))
+                .map_or(0, |index| index as u32 + 1),
+        )
+        .build();
+    screen.connect_selected_notify({
+        let settings = settings.clone();
+        let app = app.clone();
+        let screens = screens.clone();
+        move |row| {
+            let selected = row.selected() as usize;
+            settings.borrow_mut().monitor = selected
+                .checked_sub(1)
+                .and_then(|index| screens.get(index).cloned());
+            save(&settings.borrow(), &app);
+        }
+    });
+    player.add(&screen);
+
     let look = adw::PreferencesGroup::builder()
         .title("Appearance")
-        .description(RESTART)
+        .description("Every change here shows on the overlay straight away.")
         .build();
 
     let font = adw::SpinRow::with_range(12.0, 96.0, 1.0);
@@ -53,9 +83,10 @@ pub fn open(app: &adw::Application) {
     font.set_value(f64::from(settings.borrow().font_size));
     font.connect_value_notify({
         let settings = settings.clone();
+        let app = app.clone();
         move |row| {
             settings.borrow_mut().font_size = row.value().max(0.0) as u32;
-            save(&settings.borrow());
+            save(&settings.borrow(), &app);
         }
     });
     look.add(&font);
@@ -66,12 +97,75 @@ pub fn open(app: &adw::Application) {
     margin.set_value(f64::from(settings.borrow().bottom_margin));
     margin.connect_value_notify({
         let settings = settings.clone();
+        let app = app.clone();
         move |row| {
             settings.borrow_mut().bottom_margin = row.value() as i32;
-            save(&settings.borrow());
+            save(&settings.borrow(), &app);
         }
     });
     look.add(&margin);
+
+    let colour = adw::EntryRow::builder()
+        .title("Text colour")
+        .text(settings.borrow().text_color.clone())
+        .build();
+    colour.connect_changed({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            let text = row.text().trim().to_owned();
+            // A half-typed colour would blank the text until the last digit.
+            if !looks_like_a_colour(&text) {
+                return;
+            }
+            settings.borrow_mut().text_color = text;
+            save(&settings.borrow(), &app);
+        }
+    });
+    look.add(&colour);
+
+    let shadow = adw::SwitchRow::builder()
+        .title("Shadow under the text")
+        .subtitle("What keeps it readable over a bright window")
+        .active(settings.borrow().text_shadow)
+        .build();
+    shadow.connect_active_notify({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            settings.borrow_mut().text_shadow = row.is_active();
+            save(&settings.borrow(), &app);
+        }
+    });
+    look.add(&shadow);
+
+    let dim = adw::SpinRow::with_range(0.0, 100.0, 5.0);
+    dim.set_title("Darkness behind the line");
+    dim.set_subtitle("Per cent. Zero shows nothing behind the words");
+    dim.set_value(settings.borrow().background_opacity * 100.0);
+    dim.connect_value_notify({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            settings.borrow_mut().background_opacity = row.value() / 100.0;
+            save(&settings.borrow(), &app);
+        }
+    });
+    look.add(&dim);
+
+    let upcoming = adw::SpinRow::with_range(0.0, 3.0, 1.0);
+    upcoming.set_title("Lines still to come");
+    upcoming.set_subtitle("Shown dimmed under the one being sung");
+    upcoming.set_value(f64::from(settings.borrow().upcoming_lines));
+    upcoming.connect_value_notify({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            settings.borrow_mut().upcoming_lines = row.value().max(0.0) as u8;
+            save(&settings.borrow(), &app);
+        }
+    });
+    look.add(&upcoming);
 
     let timing = adw::PreferencesGroup::builder()
         .title("Timing")
@@ -92,10 +186,11 @@ pub fn open(app: &adw::Application) {
     offset.set_value(settings.borrow().offset_ms(&followed) as f64);
     offset.connect_value_notify({
         let settings = settings.clone();
+        let app = app.clone();
         move |row| {
             let value = row.value() as i64;
             settings.borrow_mut().set_offset_ms(&followed, value);
-            save(&settings.borrow());
+            save(&settings.borrow(), &app);
         }
     });
     timing.add(&offset);
@@ -122,9 +217,36 @@ pub fn open(app: &adw::Application) {
     window.present();
 }
 
-fn save(settings: &Settings) {
+/// Writes the settings down and tells the overlay to read them again.
+fn save(settings: &Settings, app: &adw::Application) {
     if let Err(error) = settings.save() {
         tracing::warn!(%error, "could not save the settings");
+        return;
+    }
+    app.activate_action("reload", None);
+}
+
+/// The names of the screens attached right now.
+fn connectors() -> Vec<String> {
+    let Some(display) = gtk::gdk::Display::default() else {
+        return Vec::new();
+    };
+    let monitors = display.monitors();
+    (0..monitors.n_items())
+        .filter_map(|index| monitors.item(index).and_downcast::<gtk::gdk::Monitor>())
+        .filter_map(|monitor| monitor.connector().map(|name| name.to_string()))
+        .collect()
+}
+
+/// Enough of a check to keep a half-typed colour from blanking the text.
+fn looks_like_a_colour(value: &str) -> bool {
+    let hex = value.strip_prefix('#');
+    match hex {
+        Some(digits) => {
+            matches!(digits.len(), 3 | 4 | 6 | 8) && digits.chars().all(|c| c.is_ascii_hexdigit())
+        }
+        // Named colours are fine too, and GTK knows more of them than we do.
+        None => !value.is_empty() && value.chars().all(|c| c.is_ascii_alphabetic()),
     }
 }
 

@@ -60,6 +60,21 @@ impl Lyrics {
         index.checked_sub(1).map(|index| &self.lines[index])
     }
 
+    /// The next lines to be sung, skipping the silences.
+    ///
+    /// An instrumental gap is left out on purpose: showing a blank line in a
+    /// list of what is coming says nothing.
+    pub fn after(&self, position: Duration, how_many: usize) -> Vec<String> {
+        let position = self.shifted(position);
+        let start = self.lines.partition_point(|line| line.at <= position);
+        self.lines[start..]
+            .iter()
+            .filter_map(|line| line.sung())
+            .take(how_many)
+            .map(str::to_owned)
+            .collect()
+    }
+
     /// The file's own `[offset:]`, applied to a position before looking it up.
     fn shifted(&self, position: Duration) -> Duration {
         let offset = Duration::from_millis(self.offset_ms.unsigned_abs());
@@ -122,6 +137,14 @@ mod tests {
             song.line_at(Duration::from_millis(9_600)).unwrap().sung(),
             Some("first")
         );
+    }
+
+    #[test]
+    fn the_lines_still_to_come_skip_the_silences() {
+        let song = song();
+        assert_eq!(song.after(Duration::from_secs(0), 2), ["first", "second"]);
+        assert_eq!(song.after(Duration::from_secs(12), 2), ["second"]);
+        assert!(song.after(Duration::from_secs(600), 2).is_empty());
     }
 
     #[test]

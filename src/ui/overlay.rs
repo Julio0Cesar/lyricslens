@@ -1,4 +1,4 @@
-//! The line of lyrics that sits above everything else.
+//! The lyrics that sit above everything else.
 //!
 //! A plain `gtk::Window`, never libadwaita: its background is opaque and
 //! fights the transparency the whole overlay depends on.
@@ -24,28 +24,58 @@ const FADE: Duration = Duration::from_millis(140);
 /// Marks the window while it is being moved, so there is something to grab.
 const POSITIONING: &str = "positioning";
 
-fn style(font_size: u32) -> String {
+/// Everything here is scoped to this class. Without it the same rules reach
+/// the preferences window, which then has no background and enormous text.
+const OVERLAY: &str = "lyricslens-overlay";
+
+fn style(settings: &Settings) -> String {
+    let shadow = if settings.text_shadow {
+        "text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);"
+    } else {
+        "text-shadow: none;"
+    };
+    let strip = if settings.background_opacity > 0.0 {
+        format!(
+            "background: rgba(0, 0, 0, {:.2}); border-radius: 14px;",
+            settings.background_opacity.clamp(0.0, 1.0)
+        )
+    } else {
+        "background: transparent;".to_owned()
+    };
+
     format!(
-        "window {{ background: transparent; }}
-         window.{POSITIONING} {{
-             background: rgba(0, 0, 0, 0.45);
+        "window.{OVERLAY} {{ background: transparent; }}
+         window.{OVERLAY} .lines {{ {strip} padding: 10px 24px; }}
+         window.{OVERLAY}.{POSITIONING} .lines {{
+             background: rgba(0, 0, 0, 0.55);
              border: 2px dashed rgba(255, 255, 255, 0.75);
-             border-radius: 12px;
+             border-radius: 14px;
          }}
-         label {{
-             color: white;
-             font-size: {font_size}px;
+         window.{OVERLAY} label {{
+             color: {color};
+             font-size: {size}px;
              font-weight: 600;
-             text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
-             padding: 0 24px;
-         }}"
+             {shadow}
+         }}
+         window.{OVERLAY} label.upcoming {{
+             font-size: {small}px;
+             font-weight: 400;
+             opacity: 0.55;
+         }}",
+        color = settings.text_color,
+        size = settings.font_size,
+        small = (settings.font_size * 7 / 10).max(10),
     )
 }
 
 #[derive(Clone)]
 pub struct Overlay {
     window: ApplicationWindow,
-    label: Label,
+    /// The line being sung, and the ones still to come under it.
+    lines: gtk::Box,
+    current: Label,
+    upcoming: Label,
+    provider: CssProvider,
     fade: Rc<RefCell<Fade>>,
     placement: Rc<RefCell<Placement>>,
     /// False where the compositor has no layer-shell and the window fell back
@@ -63,7 +93,7 @@ struct Fade {
 /// Where the overlay sits, and whether it is being moved right now.
 struct Placement {
     settings: Settings,
-    /// Margins at the moment a drag started, so the drag is relative to them.
+    /// The margins when the drag started, so the drag is relative to them.
     grabbed: Option<(i32, i32)>,
     positioning: bool,
 }
@@ -74,25 +104,42 @@ impl Overlay {
         let display = gtk::gdk::Display::default().ok_or(Error::NoDisplay)?;
 
         let provider = CssProvider::new();
-        provider.load_from_string(&style(settings.font_size));
+        provider.load_from_string(&style(settings));
         gtk::style_context_add_provider_for_display(
             &display,
             &provider,
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
 
-        let label = Label::builder()
+        let current = Label::builder()
             .justify(gtk::Justification::Center)
             .wrap(true)
+            .build();
+        let upcoming = Label::builder()
+            .justify(gtk::Justification::Center)
+            .wrap(true)
+            .visible(false)
+            .build();
+        upcoming.add_css_class("upcoming");
+
+        let lines = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(4)
+            .halign(gtk::Align::Center)
+            .valign(gtk::Align::End)
             .opacity(0.0)
             .build();
+        lines.add_css_class("lines");
+        lines.append(&current);
+        lines.append(&upcoming);
 
         let window = ApplicationWindow::builder()
             .application(app)
             .default_width(900)
-            .default_height(120)
-            .child(&label)
+            .default_height(160)
+            .child(&lines)
             .build();
+        window.add_css_class(OVERLAY);
 
         // The branch is on the protocol, never on which desktop is running.
         // GNOME is the case that lands here, because Mutter does not implement
@@ -115,7 +162,10 @@ impl Overlay {
 
         let overlay = Self {
             window,
-            label,
+            lines,
+            current,
+            upcoming,
+            provider,
             fade: Rc::new(RefCell::new(Fade {
                 shown: None,
                 wanted: None,
@@ -156,6 +206,23 @@ impl Overlay {
         self.animate();
     }
 
+    /// The lines still to come, under the one being sung.
+    pub fn show_upcoming(&self, lines: &[String]) {
+        if lines.is_empty() {
+            self.upcoming.set_visible(false);
+            return;
+        }
+        self.upcoming.set_text(&lines.join("\n"));
+        self.upcoming.set_visible(true);
+    }
+
+    /// Takes the settings again, after the preferences window changed them.
+    pub fn reload(&self, settings: &Settings) {
+        self.provider.load_from_string(&style(settings));
+        self.placement.borrow_mut().settings = settings.clone();
+        self.place();
+    }
+
     /// Brings the overlay back to the screen, which is what a second launch
     /// of the program should do instead of drawing another one.
     pub fn present(&self) {
@@ -176,9 +243,9 @@ impl Overlay {
     /// Enters or leaves the mode where the overlay can be dragged.
     ///
     /// A layer surface cannot be moved by the pointer: its position comes from
-    /// an anchor and a margin. So the mode takes the clicks the overlay
-    /// normally lets through, turns the drag into margins, and writes them
-    /// down on the way out.
+    /// an anchor and a margin, and moving it under the cursor would drag the
+    /// cursor's own frame of reference along. So the mode grows the surface to
+    /// cover the screen and moves the lines inside it, which stays still.
     pub fn toggle_positioning(&self) {
         let positioning = {
             let mut placement = self.placement.borrow_mut();
@@ -189,9 +256,9 @@ impl Overlay {
         if positioning {
             self.window.add_css_class(POSITIONING);
             self.window.set_visible(true);
-            self.label.set_opacity(1.0);
-            if self.label.text().is_empty() {
-                self.label.set_text("drag me");
+            self.lines.set_opacity(1.0);
+            if self.current.text().is_empty() {
+                self.current.set_text("drag me");
             }
         } else {
             self.window.remove_css_class(POSITIONING);
@@ -206,6 +273,7 @@ impl Overlay {
                 );
             }
         }
+        self.place();
         self.set_click_through(!positioning);
     }
 
@@ -246,20 +314,17 @@ impl Overlay {
         drag.connect_drag_update({
             let overlay = self.clone();
             move |_, x, y| {
-                let moved = {
+                {
                     let mut placement = overlay.placement.borrow_mut();
                     let Some((left, bottom)) = placement.grabbed else {
                         return;
                     };
-                    // Dragging down moves the window down, which is a smaller
+                    // Dragging down moves the lines down, which is a smaller
                     // distance from the bottom.
                     placement.settings.left_margin = Some((left + x as i32).max(0));
                     placement.settings.bottom_margin = (bottom - y as i32).max(0);
-                    true
-                };
-                if moved {
-                    overlay.place();
                 }
+                overlay.place();
             }
         });
 
@@ -273,28 +338,78 @@ impl Overlay {
         self.window.add_controller(drag);
     }
 
-    /// Puts the window where the settings say.
+    /// Puts the lines where the settings say.
     fn place(&self) {
         let placement = self.placement.borrow();
+        let positioning = placement.positioning;
         let (left, bottom) = (
             placement.settings.left_margin,
             placement.settings.bottom_margin,
         );
         drop(placement);
 
-        if self.layer_shell {
-            self.window.set_anchor(Edge::Bottom, true);
-            self.window.set_margin(Edge::Bottom, bottom);
-            // Anchoring left is what makes the left margin mean anything; with
-            // no anchor the compositor centres the surface.
-            self.window.set_anchor(Edge::Left, left.is_some());
-            self.window.set_margin(Edge::Left, left.unwrap_or(0));
-        } else {
+        if !self.layer_shell {
             x11::place(&self.window, left, bottom);
+            return;
         }
+
+        self.choose_monitor();
+
+        if positioning {
+            // The surface covers the screen and stops moving; the lines move
+            // inside it, so the pointer and the thing it drags stay in the
+            // same frame of reference.
+            for edge in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] {
+                self.window.set_anchor(edge, true);
+                self.window.set_margin(edge, 0);
+            }
+            self.lines.set_halign(gtk::Align::Start);
+            self.lines
+                .set_margin_start(left.unwrap_or_else(|| self.centred_left()));
+            self.lines.set_margin_bottom(bottom);
+            return;
+        }
+
+        self.lines.set_halign(gtk::Align::Center);
+        self.lines.set_margin_start(0);
+        self.lines.set_margin_bottom(0);
+        self.window.set_anchor(Edge::Top, false);
+        self.window.set_anchor(Edge::Right, false);
+        self.window.set_anchor(Edge::Bottom, true);
+        self.window.set_margin(Edge::Bottom, bottom);
+        // Anchoring left is what makes the left margin mean anything; with no
+        // anchor the compositor centres the surface.
+        self.window.set_anchor(Edge::Left, left.is_some());
+        self.window.set_margin(Edge::Left, left.unwrap_or(0));
     }
 
-    /// Where the window sits when it is centred, so a drag can start from there.
+    /// Binds the surface to the screen the settings name.
+    ///
+    /// A layer surface belongs to one output. Moving between screens is not a
+    /// drag but a different surface, so the screen is a setting.
+    fn choose_monitor(&self) {
+        let wanted = self.placement.borrow().settings.monitor.clone();
+        let Some(wanted) = wanted else {
+            return;
+        };
+        let Some(display) = gtk::gdk::Display::default() else {
+            return;
+        };
+
+        let monitors = display.monitors();
+        for index in 0..monitors.n_items() {
+            let Some(monitor) = monitors.item(index).and_downcast::<gtk::gdk::Monitor>() else {
+                continue;
+            };
+            if monitor.connector().is_some_and(|name| name == wanted) {
+                self.window.set_monitor(Some(&monitor));
+                return;
+            }
+        }
+        tracing::warn!(%wanted, "no screen by that name; leaving it to the compositor");
+    }
+
+    /// Where the lines sit when centred, so a drag can start from there.
     fn centred_left(&self) -> i32 {
         let Some(surface) = self.window.surface() else {
             return 0;
@@ -302,7 +417,7 @@ impl Overlay {
         let Some(monitor) = surface.display().monitor_at_surface(&surface) else {
             return 0;
         };
-        (monitor.geometry().width() - self.window.width()) / 2
+        (monitor.geometry().width() - self.lines.width().max(1)) / 2
     }
 
     /// Fades the current line out, swaps the text, fades the next one in.
@@ -312,13 +427,14 @@ impl Overlay {
     fn animate(&self) {
         let started = Instant::now();
         let fade = Rc::clone(&self.fade);
+        let current = self.current.clone();
         let swapped = std::cell::Cell::new(false);
 
-        self.label.add_tick_callback(move |label, _| {
+        self.lines.add_tick_callback(move |lines, _| {
             let elapsed = started.elapsed();
 
             if elapsed < FADE {
-                label.set_opacity(1.0 - elapsed.as_secs_f64() / FADE.as_secs_f64());
+                lines.set_opacity(1.0 - elapsed.as_secs_f64() / FADE.as_secs_f64());
                 return ControlFlow::Continue;
             }
 
@@ -326,23 +442,23 @@ impl Overlay {
                 swapped.set(true);
                 let mut state = fade.borrow_mut();
                 state.shown = state.wanted.clone();
-                label.set_text(state.shown.as_deref().unwrap_or_default());
+                current.set_text(state.shown.as_deref().unwrap_or_default());
             }
 
             // Nothing to fade in during an instrumental: the screen stays empty.
             if fade.borrow().shown.is_none() {
                 fade.borrow_mut().running = false;
-                label.set_opacity(0.0);
+                lines.set_opacity(0.0);
                 return ControlFlow::Break;
             }
 
             let progress = (elapsed - FADE).as_secs_f64() / FADE.as_secs_f64();
             if progress >= 1.0 {
-                label.set_opacity(1.0);
+                lines.set_opacity(1.0);
                 fade.borrow_mut().running = false;
                 return ControlFlow::Break;
             }
-            label.set_opacity(progress);
+            lines.set_opacity(progress);
             ControlFlow::Continue
         });
     }

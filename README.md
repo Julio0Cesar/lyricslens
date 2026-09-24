@@ -111,6 +111,16 @@ bind = SUPER SHIFT, L, exec, lyricslens --position
 letting them through: drag it where you want, then press the key again. Where
 you left it is saved.
 
+A layer surface belongs to one screen and cannot be dragged to another, so the
+screen is a choice in the preferences rather than a drag across the edge.
+
+### How it looks
+
+The preferences window holds the font size, the text colour, the shadow that
+keeps it readable over a bright window, how dark the strip behind the line is,
+and how many lines still to come are shown dimmed underneath. Every one of them
+shows on the overlay straight away.
+
 ## What it needs from a player
 
 LyricsLens follows the position the player reports, and some players report
