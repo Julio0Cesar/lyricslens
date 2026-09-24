@@ -78,6 +78,10 @@ the application menu it already runs in the background; from a terminal, add
 Launching it again while a copy is running brings that one to the front instead
 of starting another.
 
+It puts an icon in the status bar, where a left click shows and hides it and
+the menu holds the rest, quitting included. Desktops without a status bar can
+use `lyricslens --quit` or the preferences window.
+
 | Command | What it does |
 | --- | --- |
 | `lyricslens` | runs the overlay, holding the terminal |
@@ -88,6 +92,7 @@ of starting another.
 | `lyricslens --upgrade` | installs the newest release over this one |
 | `lyricslens --uninstall` | removes it from `~/.local` |
 | `lyricslens --paths` | prints where the settings and the cached lyrics live |
+| `lyricslens --quit` | closes the overlay that is running |
 | `lyricslens --help` | the whole list |
 
 ### A key to hide it

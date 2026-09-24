@@ -13,6 +13,7 @@ use lyricslens::store::settings::Settings;
 use lyricslens::sync::clock::Clock;
 use lyricslens::ui::overlay::Overlay;
 use lyricslens::ui::settings as preferences;
+use lyricslens::ui::tray;
 
 /// How often the overlay asks the clock which line is being sung.
 ///
@@ -27,10 +28,11 @@ const ID: &str = "io.github.julio0cesar.lyricslens";
 /// Wayland gives an ordinary client no way to grab a key combination, so the
 /// hotkey belongs to the compositor. All this program offers is the command
 /// for the compositor to run.
-const COMMANDS: [(&str, &str); 3] = [
+const COMMANDS: [(&str, &str); 4] = [
     ("--toggle", "toggle"),
     ("--position", "position"),
     ("--settings", "settings"),
+    ("--quit", "quit"),
 ];
 
 fn main() -> glib::ExitCode {
@@ -92,6 +94,24 @@ fn main() -> glib::ExitCode {
         let overlay = Rc::new(overlay);
         *running.borrow_mut() = Some(Rc::clone(&overlay));
         add_commands(application, &overlay);
+
+        // The icon in the status bar is the only handle a program with no
+        // window of its own gives the person running it.
+        let commands = tray::start();
+        glib::spawn_future_local({
+            let application = application.clone();
+            let overlay = Rc::clone(&overlay);
+            async move {
+                while let Ok(command) = commands.recv().await {
+                    match command {
+                        tray::Command::Toggle => overlay.toggle(),
+                        tray::Command::Position => overlay.toggle_positioning(),
+                        tray::Command::Settings => preferences::open(&application),
+                        tray::Command::Quit => application.quit(),
+                    }
+                }
+            }
+        });
 
         let state = Rc::new(RefCell::new(State::new(settings.clone())));
 
@@ -158,6 +178,12 @@ fn add_commands(application: &adw::Application, overlay: &Rc<Overlay>) {
         move |_, _| preferences::open(&application)
     });
 
+    let quit = gio::SimpleAction::new("quit", None);
+    quit.connect_activate({
+        let application = application.clone();
+        move |_, _| application.quit()
+    });
+
     let toggle = gio::SimpleAction::new("toggle", None);
     toggle.connect_activate({
         let overlay = Rc::clone(overlay);
@@ -170,6 +196,7 @@ fn add_commands(application: &adw::Application, overlay: &Rc<Overlay>) {
         move |_, _| overlay.toggle_positioning()
     });
 
+    application.add_action(&quit);
     application.add_action(&present);
     application.add_action(&settings);
     application.add_action(&toggle);

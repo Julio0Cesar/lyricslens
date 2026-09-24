@@ -21,6 +21,7 @@ Options:
       --settings    open the preferences window
       --toggle      hide the overlay, or bring it back
       --position    drag the overlay somewhere else, then press again
+      --quit        close the overlay that is running
       --paths       print where the settings, cache and lyrics live
       --upgrade     install the newest release over this one
       --uninstall   remove the program from ~/.local
@@ -130,6 +131,7 @@ fn known(argument: &str) -> bool {
             | "--settings"
             | "--toggle"
             | "--position"
+            | "--quit"
     )
 }
 

@@ -100,9 +100,24 @@ pub fn open(app: &adw::Application) {
     });
     timing.add(&offset);
 
+    // A program with no window of its own needs a way out that is not the
+    // tray, for the desktops that have none.
+    let close = adw::PreferencesGroup::new();
+    let quit = adw::ActionRow::builder()
+        .title("Quit LyricsLens")
+        .subtitle("Closes the overlay and leaves the status bar")
+        .activatable(true)
+        .build();
+    quit.connect_activated({
+        let app = app.clone();
+        move |_| app.quit()
+    });
+    close.add(&quit);
+
     page.add(&player);
     page.add(&look);
     page.add(&timing);
+    page.add(&close);
     window.add(&page);
     window.present();
 }
