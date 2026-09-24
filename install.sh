@@ -8,6 +8,7 @@ set -eu
 
 REPO="Julio0Cesar/lyricslens"
 NAME="lyricslens"
+SHORT="lls"
 PREFIX="${XDG_DATA_HOME:-$HOME/.local/share}"
 BIN="$HOME/.local/bin"
 APPS="$PREFIX/applications"
@@ -19,7 +20,7 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 remove() {
     rm -rf "$HOME_DIR"
-    rm -f "$BIN/$NAME" "$APPS/$NAME.desktop"
+    rm -f "$BIN/$NAME" "$BIN/$SHORT" "$APPS/$NAME.desktop"
     for size in 32 64 128 256; do
         rm -f "$ICONS/${size}x${size}/apps/$NAME.png"
     done
@@ -98,6 +99,9 @@ exec "$HOME_DIR/$NAME" "\$@"
 LAUNCHER
 chmod 755 "$BIN/$NAME"
 
+# The same launcher under a name worth typing.
+ln -sf "$NAME" "$BIN/$SHORT"
+
 for size in 32 64 128 256; do
     if [ -f "$WORK/icons/$size.png" ]; then
         install -Dm644 "$WORK/icons/$size.png" "$ICONS/${size}x${size}/apps/$NAME.png"
@@ -126,4 +130,5 @@ case ":$PATH:" in
     *) say "Run it with: $BIN/$NAME"
        say "($BIN is not on your PATH; add it to use the short name.)" ;;
 esac
+say "Short name: $SHORT"
 say "Preferences: $NAME --settings"

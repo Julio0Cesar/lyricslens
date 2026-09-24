@@ -11,17 +11,38 @@ use serde::{Deserialize, Serialize};
 
 const FILE: &str = "settings.toml";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
     /// Part of a player's bus name, when more than one is running.
     pub player: Option<String>,
+    /// Which screen the overlay lives on, by connector name — `HDMI-A-1` and
+    /// the like. A layer surface belongs to one screen and cannot be dragged
+    /// to another, so it is chosen rather than moved. Absent means whichever
+    /// the compositor picks.
+    pub monitor: Option<String>,
     /// How far above the bottom of the screen the line sits, in pixels.
     pub bottom_margin: i32,
     /// How far from the left edge, in pixels. Absent means centred, which is
     /// what it is until the overlay is dragged somewhere else.
     pub left_margin: Option<i32>,
     pub font_size: u32,
+    /// The colour of the line being sung.
+    pub text_color: String,
+    /// A shadow under the text, which is what keeps it readable over a bright
+    /// window without a background of its own.
+    pub text_shadow: bool,
+    /// How dark the strip behind the line is, from 0 for nothing to 1 for
+    /// solid black. Anything above zero also rounds its corners.
+    pub background_opacity: f64,
+    /// How many lines still to come are shown under the current one, dimmed.
+    /// Zero shows only what is being sung now.
+    pub upcoming_lines: u8,
+    /// Fills the line word by word as the song moves through it.
+    pub karaoke: bool,
+    /// Lets the pointer reach the overlay, so it can be dragged. Off means
+    /// clicks go straight through to whatever is underneath.
+    pub movable: bool,
     /// Manual correction per player, in milliseconds. Positive means the
     /// lyrics run early and have to wait.
     pub offsets: BTreeMap<String, i64>,
@@ -31,9 +52,16 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             player: None,
+            monitor: None,
             bottom_margin: 100,
             left_margin: None,
             font_size: 30,
+            text_color: "#ffffff".to_owned(),
+            text_shadow: true,
+            background_opacity: 0.0,
+            upcoming_lines: 0,
+            karaoke: false,
+            movable: false,
             offsets: BTreeMap::new(),
         }
     }

@@ -71,17 +71,28 @@ have. On Arch: `gtk4 libadwaita gtk4-layer-shell`. On Debian and Ubuntu:
 lyricslens
 ```
 
-The overlay appears near the bottom of the screen and follows the song.
+The overlay appears near the bottom of the screen and follows the song. It runs
+in the background and gives the terminal straight back. `lls` is the same
+program under a shorter name.
+
+Launching it again while a copy is running brings that one to the front instead
+of starting another.
+
+It puts an icon in the status bar, where a left click shows and hides it and
+the menu holds the rest, quitting included. Desktops without a status bar can
+use `lyricslens --quit` or the preferences window.
 
 | Command | What it does |
 | --- | --- |
-| `lyricslens` | runs the overlay |
+| `lyricslens`, or `lls` | runs the overlay and gives the terminal back |
+| `lyricslens --foreground` | keeps the terminal, for watching the log |
 | `lyricslens --settings` | opens the preferences window |
 | `lyricslens --toggle` | hides the overlay, or brings it back |
 | `lyricslens --position` | enters the mode where you drag it somewhere else |
 | `lyricslens --upgrade` | installs the newest release over this one |
 | `lyricslens --uninstall` | removes it from `~/.local` |
 | `lyricslens --paths` | prints where the settings and the cached lyrics live |
+| `lyricslens --quit` | closes the overlay that is running |
 | `lyricslens --help` | the whole list |
 
 ### A key to hide it
@@ -99,6 +110,20 @@ bind = SUPER SHIFT, L, exec, lyricslens --position
 `--position` turns on a mode where the overlay takes your clicks instead of
 letting them through: drag it where you want, then press the key again. Where
 you left it is saved.
+
+A layer surface belongs to one screen and cannot be dragged to another, so the
+screen is a choice in the preferences rather than a drag across the edge.
+
+### How it looks
+
+The preferences window holds the font size, the text colour, the shadow that
+keeps it readable over a bright window, how dark the strip behind the line is,
+how many lines still to come are shown dimmed underneath, and a karaoke mode
+that fills the line as the song moves through it. Every one of them shows on
+the overlay straight away.
+
+The same window has the switch that lets you drag the overlay, and the screen
+it lives on.
 
 ## What it needs from a player
 

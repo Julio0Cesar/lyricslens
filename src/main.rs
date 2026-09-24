@@ -13,6 +13,7 @@ use lyricslens::store::settings::Settings;
 use lyricslens::sync::clock::Clock;
 use lyricslens::ui::overlay::Overlay;
 use lyricslens::ui::settings as preferences;
+use lyricslens::ui::tray;
 
 /// How often the overlay asks the clock which line is being sung.
 ///
@@ -27,7 +28,12 @@ const ID: &str = "io.github.julio0cesar.lyricslens";
 /// Wayland gives an ordinary client no way to grab a key combination, so the
 /// hotkey belongs to the compositor. All this program offers is the command
 /// for the compositor to run.
-const COMMANDS: [(&str, &str); 2] = [("--toggle", "toggle"), ("--position", "position")];
+const COMMANDS: [(&str, &str); 4] = [
+    ("--toggle", "toggle"),
+    ("--position", "position"),
+    ("--settings", "settings"),
+    ("--quit", "quit"),
+];
 
 fn main() -> glib::ExitCode {
     tracing_subscriber::fmt()
@@ -38,16 +44,35 @@ fn main() -> glib::ExitCode {
         return glib::ExitCode::from(code);
     }
 
-    if let Some(action) = asked_command() {
-        return send(action);
+    // Anything the running overlay can do, it should do itself rather than a
+    // second copy doing it beside it.
+    if let Some(action) = asked_command()
+        && let Some(code) = send(action)
+    {
+        return code;
     }
 
     let application = adw::Application::builder().application_id(ID).build();
 
     if preferences::requested() {
+        // Nothing is running, so the preferences window is the whole program.
         application.connect_activate(preferences::open);
         // GTK would try to make sense of our own flags otherwise.
         return application.run_with_args::<&str>(&[]);
+    }
+
+    // Launching again while a copy runs is a request to see it, not to start
+    // another. Saying so is the difference between "it did nothing" and "it is
+    // already there".
+    if running_elsewhere() {
+        println!("LyricsLens is already running; bringing the overlay to the front.");
+        return send("present").unwrap_or(glib::ExitCode::SUCCESS);
+    }
+
+    // The overlay is meant to sit there all day, so the terminal comes back
+    // straight away. `--foreground` is for watching the log.
+    if !lyricslens::cli::wants_foreground() {
+        return glib::ExitCode::from(lyricslens::cli::detach());
     }
 
     let settings = Settings::load();
@@ -76,7 +101,38 @@ fn main() -> glib::ExitCode {
         *running.borrow_mut() = Some(Rc::clone(&overlay));
         add_commands(application, &overlay);
 
+        // The icon in the status bar is the only handle a program with no
+        // window of its own gives the person running it.
+        let commands = tray::start();
+        glib::spawn_future_local({
+            let application = application.clone();
+            let overlay = Rc::clone(&overlay);
+            async move {
+                while let Ok(command) = commands.recv().await {
+                    match command {
+                        tray::Command::Toggle => overlay.toggle(),
+                        tray::Command::Position => overlay.toggle_positioning(),
+                        tray::Command::Settings => preferences::open(&application),
+                        tray::Command::Quit => application.quit(),
+                    }
+                }
+            }
+        });
+
         let state = Rc::new(RefCell::new(State::new(settings.clone())));
+        // The preferences window writes the file and asks for this: both the
+        // window and what decides its contents have to read it again.
+        let reload = gio::SimpleAction::new("reload", None);
+        reload.connect_activate({
+            let overlay = Rc::clone(&overlay);
+            let state = Rc::clone(&state);
+            move |_, _| {
+                let settings = Settings::load();
+                overlay.reload(&settings);
+                state.borrow_mut().settings = settings;
+            }
+        });
+        application.add_action(&reload);
 
         let updates = updates.clone();
         let reader = Rc::clone(&state);
@@ -87,7 +143,10 @@ fn main() -> glib::ExitCode {
         });
 
         glib::timeout_add_local(TICK, move || {
-            overlay.show(state.borrow().line().as_deref());
+            let state = state.borrow();
+            overlay.show(state.line().as_deref());
+            overlay.show_upcoming(&state.upcoming());
+            overlay.show_progress(state.progress());
             glib::ControlFlow::Continue
         });
     });
@@ -104,23 +163,49 @@ fn asked_command() -> Option<&'static str> {
         .map(|(_, action)| *action)
 }
 
-/// Hands the action to the instance already running, and says so when there is
-/// none.
-fn send(action: &str) -> glib::ExitCode {
+/// Hands the action to the instance already running.
+///
+/// `None` means there is none, and the caller decides what to do about it: for
+/// the preferences window that is to open one, for hiding the overlay there is
+/// nothing to hide.
+fn send(action: &str) -> Option<glib::ExitCode> {
     let remote = gio::Application::new(Some(ID), gio::ApplicationFlags::empty());
     if let Err(error) = remote.register(gio::Cancellable::NONE) {
-        eprintln!("could not reach the session bus: {error}");
-        return glib::ExitCode::FAILURE;
+        eprintln!("lyricslens: could not reach the session bus: {error}");
+        return Some(glib::ExitCode::FAILURE);
     }
     if !remote.is_remote() {
-        eprintln!("lyricslens is not running");
-        return glib::ExitCode::FAILURE;
+        return None;
     }
     remote.activate_action(action, None);
-    glib::ExitCode::SUCCESS
+    Some(glib::ExitCode::SUCCESS)
+}
+
+/// Whether another copy already holds the application's name on the bus.
+fn running_elsewhere() -> bool {
+    let probe = gio::Application::new(Some(ID), gio::ApplicationFlags::empty());
+    probe.register(gio::Cancellable::NONE).is_ok() && probe.is_remote()
 }
 
 fn add_commands(application: &adw::Application, overlay: &Rc<Overlay>) {
+    let present = gio::SimpleAction::new("present", None);
+    present.connect_activate({
+        let overlay = Rc::clone(overlay);
+        move |_, _| overlay.present()
+    });
+
+    let settings = gio::SimpleAction::new("settings", None);
+    settings.connect_activate({
+        let application = application.clone();
+        move |_, _| preferences::open(&application)
+    });
+
+    let quit = gio::SimpleAction::new("quit", None);
+    quit.connect_activate({
+        let application = application.clone();
+        move |_, _| application.quit()
+    });
+
     let toggle = gio::SimpleAction::new("toggle", None);
     toggle.connect_activate({
         let overlay = Rc::clone(overlay);
@@ -133,6 +218,9 @@ fn add_commands(application: &adw::Application, overlay: &Rc<Overlay>) {
         move |_, _| overlay.toggle_positioning()
     });
 
+    application.add_action(&quit);
+    application.add_action(&present);
+    application.add_action(&settings);
     application.add_action(&toggle);
     application.add_action(&position);
 }
@@ -184,6 +272,26 @@ impl State {
             }
             Update::Media(Event::PositionStalled) => self.stalled = true,
         }
+    }
+
+    /// How far through the current line the song is.
+    fn progress(&self) -> Option<f64> {
+        let position = self.clock.position(Instant::now())?;
+        self.lyrics.as_ref()?.progress_at(position)
+    }
+
+    /// The lines still to come, as many as the settings ask for.
+    fn upcoming(&self) -> Vec<String> {
+        let wanted = usize::from(self.settings.upcoming_lines);
+        if wanted == 0 {
+            return Vec::new();
+        }
+        let (Some(lyrics), Some(position)) =
+            (self.lyrics.as_ref(), self.clock.position(Instant::now()))
+        else {
+            return Vec::new();
+        };
+        lyrics.after(position, wanted)
     }
 
     /// The words on screen right now.

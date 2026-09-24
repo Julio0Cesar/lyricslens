@@ -17,14 +17,17 @@ Usage:
 Options:
   -h, --help        print this and exit
   -V, --version     print the version and exit
+      --foreground  keep the terminal, instead of letting go of it
       --settings    open the preferences window
       --toggle      hide the overlay, or bring it back
       --position    drag the overlay somewhere else, then press again
+      --quit        close the overlay that is running
       --paths       print where the settings, cache and lyrics live
       --upgrade     install the newest release over this one
       --uninstall   remove the program from ~/.local
 
-With no option, the overlay runs and follows whatever is playing.
+With no option, the overlay runs in the background and gives the terminal back.
+`lls` is the same program under a shorter name.
 
 Hiding and moving belong to a key of your own: Wayland gives a program no way
 to claim one, so bind your compositor to `lyricslens --toggle`.
@@ -74,6 +77,55 @@ pub fn handle() -> Option<u8> {
     None
 }
 
+/// Whether this run should hold on to the terminal.
+///
+/// The child started by [`detach`] carries a marker, or it would fork forever.
+pub fn wants_foreground() -> bool {
+    std::env::args().any(|argument| argument == "--foreground") || std::env::var_os(CHILD).is_some()
+}
+
+/// Marks the copy that was started in the background, so it does not try to
+/// start another.
+const CHILD: &str = "LYRICSLENS_DETACHED";
+
+/// Starts a copy of the program detached from the terminal and returns.
+///
+/// GTK applications normally hold the terminal they were started from. This
+/// one is meant to sit there all day, so it lets go by default.
+pub fn detach() -> u8 {
+    use std::os::unix::process::CommandExt;
+    use std::process::Stdio;
+
+    let Ok(program) = std::env::current_exe() else {
+        eprintln!("lyricslens: could not find my own binary");
+        return 1;
+    };
+
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+
+    let mut command = Command::new(program);
+    command
+        .args(arguments)
+        .env(CHILD, "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    // A group of its own, so closing the terminal does not take it along.
+    command.process_group(0);
+
+    match command.spawn() {
+        Ok(child) => {
+            println!("LyricsLens is running (pid {}).", child.id());
+            println!("Close it from the icon in the status bar, or with: lyricslens --quit");
+            0
+        }
+        Err(error) => {
+            eprintln!("lyricslens: could not start in the background: {error}");
+            1
+        }
+    }
+}
+
 fn known(argument: &str) -> bool {
     matches!(
         argument,
@@ -83,9 +135,11 @@ fn known(argument: &str) -> bool {
             | "--paths"
             | "--upgrade"
             | "--uninstall"
+            | "--foreground"
             | "--settings"
             | "--toggle"
             | "--position"
+            | "--quit"
     )
 }
 
