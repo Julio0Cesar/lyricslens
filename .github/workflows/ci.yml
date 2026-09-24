@@ -23,7 +23,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libgtk-4-dev \
-            libgtk4-layer-shell-dev
+            libgtk4-layer-shell-dev \
+            dbus
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -34,5 +35,7 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
 
+      # The MPRIS test publishes a fake player, so it needs a session bus of its
+      # own — the runner has none.
       - name: Test
-        run: cargo test
+        run: dbus-run-session -- cargo test
