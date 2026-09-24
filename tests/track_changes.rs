@@ -6,8 +6,8 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use lyricslens::mpris::track::Track;
-use lyricslens::mpris::watch::{Event, follow};
+use lyricslens::media::mpris::follow;
+use lyricslens::media::{Event, Track};
 use zbus::names::OwnedBusName;
 use zbus::zvariant::{OwnedValue, Value};
 use zbus::{Connection, interface};

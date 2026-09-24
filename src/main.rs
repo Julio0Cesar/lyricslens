@@ -6,8 +6,7 @@ use gtk4_layer_shell::{Edge, Layer, LayerShell};
 
 use lyricslens::error;
 use lyricslens::media;
-use lyricslens::mpris::track::Track;
-use lyricslens::mpris::watch::Event;
+use lyricslens::media::{Event, Track};
 
 fn main() -> gtk::glib::ExitCode {
     tracing_subscriber::fmt()
