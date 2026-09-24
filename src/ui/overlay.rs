@@ -19,10 +19,10 @@ use crate::store::settings::Settings;
 mod x11;
 
 /// Half a change. One line goes out over this, the next comes in over it.
-const FADE: Duration = Duration::from_millis(160);
+const FADE: Duration = Duration::from_millis(170);
 
 /// How far below its place the incoming line starts, in pixels.
-const RISE: i32 = 22;
+const RISE: i32 = 26;
 
 /// Marks the window while it is being moved, so there is something to grab.
 const POSITIONING: &str = "positioning";
@@ -77,9 +77,10 @@ pub struct Overlay {
     window: ApplicationWindow,
     /// The line being sung, and the ones still to come under it.
     lines: gtk::Box,
-    /// Fixed height, so the line can slide inside it without the surface
-    /// growing and shrinking on every frame.
-    stage: gtk::Box,
+    /// Holds the space the line needs; the line floats above it.
+    room: gtk::Box,
+    /// The line and its bright copy, which is what actually moves.
+    stacked: gtk::Overlay,
     current: Label,
     /// The same words in full colour, clipped to how far the song has gone.
     sung: Label,
@@ -121,34 +122,58 @@ impl Overlay {
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
 
+        // Both copies hug their text and sit in the same place, or the bright
+        // one would be cut from the wrong edge.
         let current = Label::builder()
             .justify(gtk::Justification::Center)
             .wrap(true)
+            .halign(gtk::Align::Center)
             .opacity(0.0)
             .build();
+        // Laid out exactly like the line underneath — same width, same
+        // centring — so cutting it from the left reveals the same words in the
+        // same places.
         let sung = Label::builder()
             .justify(gtk::Justification::Center)
             .wrap(true)
-            .xalign(0.0)
+            .halign(gtk::Align::Start)
             .build();
 
         // The bright copy sits on top of the dim one and is cut off at the
         // point the song has reached.
         let clip = gtk::Box::builder()
             .halign(gtk::Align::Start)
+            .valign(gtk::Align::Fill)
             .overflow(gtk::Overflow::Hidden)
             .visible(false)
             .build();
         clip.append(&sung);
 
-        let stacked = gtk::Overlay::builder().child(&current).build();
+        // Anchored to the top of the space it floats over: a margin there
+        // pushes the line down, and the space clips it, so shrinking the
+        // margin lifts the line into place.
+        let stacked = gtk::Overlay::builder()
+            .child(&current)
+            .halign(gtk::Align::Center)
+            .valign(gtk::Align::Start)
+            .build();
         stacked.add_overlay(&clip);
 
-        let stage = gtk::Box::builder()
+        // The space the line occupies, and nothing else. The line itself
+        // floats above it, so sliding it up and down cannot change the size of
+        // anything — without this the surface grows by exactly as much as the
+        // line moves, and the movement cancels out on screen.
+        let room = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
+            .halign(gtk::Align::Center)
+            .build();
+
+        let stage = gtk::Overlay::builder()
+            .child(&room)
             .overflow(gtk::Overflow::Hidden)
             .build();
-        stage.append(&stacked);
+        stage.add_overlay(&stacked);
+        stage.set_measure_overlay(&stacked, false);
         let upcoming = Label::builder()
             .justify(gtk::Justification::Center)
             .wrap(true)
@@ -196,7 +221,8 @@ impl Overlay {
         let overlay = Self {
             window,
             lines,
-            stage,
+            room,
+            stacked,
             current,
             sung,
             clip,
@@ -254,14 +280,13 @@ impl Overlay {
             return;
         };
 
-        let width = self.current.width();
+        let width = self.room.width();
         if width <= 0 {
             return;
         }
         self.current.add_css_class("unsung");
-        self.sung.set_width_request(width);
         self.clip
-            .set_width_request(((f64::from(width) * progress) as i32).max(1));
+            .set_size_request(((f64::from(width) * progress) as i32).max(1), -1);
         self.clip.set_visible(true);
     }
 
@@ -286,6 +311,7 @@ impl Overlay {
         }
         if movable {
             self.window.add_css_class(POSITIONING);
+            self.lines.set_visible(true);
             self.current.set_opacity(1.0);
         } else {
             self.window.remove_css_class(POSITIONING);
@@ -330,6 +356,7 @@ impl Overlay {
         if positioning {
             self.window.add_css_class(POSITIONING);
             self.window.set_visible(true);
+            self.lines.set_visible(true);
             self.current.set_opacity(1.0);
             if self.current.text().is_empty() {
                 self.current.set_text("drag me");
@@ -504,9 +531,11 @@ impl Overlay {
         let current = self.current.clone();
         let sung = self.sung.clone();
         let clip = self.clip.clone();
-        let stage = self.stage.clone();
+        let room = self.room.clone();
+        let stacked = self.stacked.clone();
         let swapped = std::cell::Cell::new(false);
 
+        let lines = self.lines.clone();
         self.lines.add_tick_callback(move |_, _| {
             let elapsed = started.elapsed();
 
@@ -519,21 +548,25 @@ impl Overlay {
             if !swapped.get() {
                 swapped.set(true);
                 clip.set_visible(false);
+                lines.set_visible(true);
                 let mut state = fade.borrow_mut();
                 state.shown = state.wanted.clone();
                 let text = state.shown.clone().unwrap_or_default();
                 current.set_text(&text);
                 sung.set_text(&text);
-                // Fixing the height here is what lets the line slide inside a
-                // box that does not resize, so the surface stays put.
-                let (_, natural, _, _) = current.measure(gtk::Orientation::Vertical, -1);
-                stage.set_size_request(-1, natural.max(1));
+                // The space is fixed to what the new line needs, and the line
+                // then slides within it without moving anything else.
+                let (_, width, _, _) = current.measure(gtk::Orientation::Horizontal, -1);
+                let (_, height, _, _) = current.measure(gtk::Orientation::Vertical, width);
+                room.set_size_request(width.max(1), height.max(1));
+                sung.set_size_request(width.max(1), height.max(1));
             }
 
             if fade.borrow().shown.is_none() {
                 fade.borrow_mut().running = false;
                 current.set_opacity(0.0);
-                current.set_margin_top(0);
+                stacked.set_margin_top(0);
+                lines.set_visible(false);
                 return ControlFlow::Break;
             }
 
@@ -541,10 +574,10 @@ impl Overlay {
             let progress = ((elapsed - FADE).as_secs_f64() / FADE.as_secs_f64()).min(1.0);
             let eased = 1.0 - (1.0 - progress).powi(3);
             current.set_opacity(eased);
-            current.set_margin_top((f64::from(RISE) * (1.0 - eased)) as i32);
+            stacked.set_margin_top((f64::from(RISE) * (1.0 - eased)) as i32);
 
             if progress >= 1.0 {
-                current.set_margin_top(0);
+                stacked.set_margin_top(0);
                 fade.borrow_mut().running = false;
                 return ControlFlow::Break;
             }
