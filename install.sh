@@ -83,7 +83,9 @@ else
     say "warning: this release publishes no SHA256SUMS; skipping the check"
 fi
 
-tar -xzf "$WORK/$ARCHIVE" -C "$WORK"
+# The archive carries a top directory named after the release; the paths below
+# are written without it.
+tar -xzf "$WORK/$ARCHIVE" -C "$WORK" --strip-components=1
 
 mkdir -p "$HOME_DIR" "$BIN" "$APPS"
 install -Dm755 "$WORK/$NAME" "$HOME_DIR/$NAME"
