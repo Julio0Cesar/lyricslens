@@ -79,6 +79,10 @@ The overlay appears near the bottom of the screen and follows the song.
 | `lyricslens --settings` | opens the preferences window |
 | `lyricslens --toggle` | hides the overlay, or brings it back |
 | `lyricslens --position` | enters the mode where you drag it somewhere else |
+| `lyricslens --upgrade` | installs the newest release over this one |
+| `lyricslens --uninstall` | removes it from `~/.local` |
+| `lyricslens --paths` | prints where the settings and the cached lyrics live |
+| `lyricslens --help` | the whole list |
 
 ### A key to hide it
 

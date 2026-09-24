@@ -34,6 +34,10 @@ fn main() -> glib::ExitCode {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
+    if let Some(code) = lyricslens::cli::handle() {
+        return glib::ExitCode::from(code);
+    }
+
     if let Some(action) = asked_command() {
         return send(action);
     }
@@ -49,7 +53,17 @@ fn main() -> glib::ExitCode {
     let settings = Settings::load();
     let updates = app::start(settings.clone());
 
+    // GTK calls this again every time the program is launched while one copy
+    // is already running. Building a second overlay there would stack another
+    // surface on the screen, so the running one is raised instead.
+    let running: Rc<RefCell<Option<Rc<Overlay>>>> = Rc::new(RefCell::new(None));
+
     application.connect_activate(move |application| {
+        if let Some(overlay) = running.borrow().as_ref() {
+            overlay.present();
+            return;
+        }
+
         let overlay = match Overlay::build(application.upcast_ref(), &settings) {
             Ok(overlay) => overlay,
             Err(error) => {
@@ -59,6 +73,7 @@ fn main() -> glib::ExitCode {
         };
 
         let overlay = Rc::new(overlay);
+        *running.borrow_mut() = Some(Rc::clone(&overlay));
         add_commands(application, &overlay);
 
         let state = Rc::new(RefCell::new(State::new(settings.clone())));
@@ -72,7 +87,7 @@ fn main() -> glib::ExitCode {
         });
 
         glib::timeout_add_local(TICK, move || {
-            overlay.show(state.borrow().line());
+            overlay.show(state.borrow().line().as_deref());
             glib::ControlFlow::Continue
         });
     });
@@ -129,6 +144,9 @@ struct State {
     lyrics: Option<Lyrics>,
     clock: Clock,
     stalled: bool,
+    /// True between a track change and the answer about its lyrics, so the
+    /// overlay can tell "still looking" from "there are none".
+    searching: bool,
 }
 
 impl State {
@@ -139,15 +157,21 @@ impl State {
             lyrics: None,
             clock: Clock::new(0),
             stalled: false,
+            searching: false,
         }
     }
 
     fn apply(&mut self, update: Update) {
         match update {
-            Update::Lyrics(lyrics) => self.lyrics = *lyrics,
+            Update::Lyrics(lyrics) => {
+                self.lyrics = *lyrics;
+                self.searching = false;
+            }
             Update::Player(name) => self.clock.set_offset_ms(self.settings.offset_ms(&name)),
             Update::Media(Event::TrackChanged(track)) => {
                 self.track = track;
+                self.lyrics = None;
+                self.searching = true;
                 self.stalled = false;
                 self.clock.reset();
             }
@@ -163,9 +187,34 @@ impl State {
     }
 
     /// The words on screen right now.
-    fn line(&self) -> Option<&str> {
-        let lyrics = self.lyrics.as_ref()?;
-        let position = self.clock.position(Instant::now())?;
-        lyrics.line_at(position)?.sung()
+    /// The words on screen right now.
+    ///
+    /// When there are no lyrics to follow, the overlay says why instead of
+    /// staying blank — a blank overlay and a broken one look identical.
+    fn line(&self) -> Option<String> {
+        if self.track.is_empty() {
+            return None;
+        }
+
+        let position = self.clock.position(Instant::now());
+        if let (Some(lyrics), Some(position)) = (self.lyrics.as_ref(), position) {
+            // None here is an instrumental gap, which is meant to be silent.
+            return lyrics
+                .line_at(position)
+                .and_then(|line| line.sung())
+                .map(str::to_owned);
+        }
+
+        let title = self.track.title.as_deref().unwrap_or("unknown track");
+        let reason = if self.stalled {
+            "this player does not report its position"
+        } else if self.searching {
+            "looking for the lyrics…"
+        } else if self.lyrics.is_none() {
+            "no synced lyrics for this one"
+        } else {
+            "waiting for the player"
+        };
+        Some(format!("{title}  ·  {reason}"))
     }
 }

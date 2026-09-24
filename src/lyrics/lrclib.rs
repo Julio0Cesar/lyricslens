@@ -78,10 +78,24 @@ impl Client {
         {
             return Ok(Some(found));
         }
-        let Some(record) = self.searched(query, duration).await? else {
-            return Ok(None);
-        };
-        Ok(synced(&record))
+
+        if let Some(record) = self.searched(query, duration).await? {
+            return Ok(synced(&record));
+        }
+
+        // A last try without the artist. Players hand over whole credit lists
+        // — "A, B, C, feat. D" — and no catalogue is indexed under those.
+        if query.artist.is_some() {
+            let title_only = Query {
+                artist: None,
+                title: query.title.clone(),
+            };
+            if let Some(record) = self.searched(&title_only, duration).await? {
+                return Ok(synced(&record));
+            }
+        }
+
+        Ok(None)
     }
 
     async fn exact(
@@ -129,17 +143,22 @@ impl Client {
             params.push(("artist_name", artist.to_owned()));
         }
 
-        let records: Vec<Record> = self
+        let response = self
             .http
             .get(format!("{}/api/search", self.base))
             .query(&params)
             .send()
-            .await?
-            .error_for_status()?
-            .json()
             .await?;
 
-        Ok(best(records, duration))
+        // The service answers 5xx for queries it cannot make sense of. That is
+        // an answer about the song, not a failure worth passing up: the caller
+        // would turn it into an error message where "not found" belongs.
+        if !response.status().is_success() {
+            tracing::debug!(status = %response.status(), "the search found nothing");
+            return Ok(None);
+        }
+
+        Ok(best(response.json().await?, duration))
     }
 }
 

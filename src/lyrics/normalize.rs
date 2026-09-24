@@ -75,10 +75,24 @@ pub fn clean(artist: Option<&str>, title: &str) -> Query {
 
     Query {
         artist: artist
-            .map(|name| trim_quotes(&name))
+            .map(|name| primary(&trim_quotes(&name)))
             .filter(|name| !name.is_empty()),
         title: trim_quotes(&title),
     }
+}
+
+/// The first name of a credit list.
+///
+/// Players hand over every credit in one string — `A, B, C & D` — and no
+/// lyrics catalogue is indexed under that. The first one is the one that finds
+/// the song.
+fn primary(artist: &str) -> String {
+    let cut = artist
+        .split_once(',')
+        .or_else(|| artist.split_once(" & "))
+        .or_else(|| artist.split_once(" feat"))
+        .map_or(artist, |(first, _)| first);
+    cut.trim().to_owned()
 }
 
 /// Drops `(...)` and `[...]` groups that say nothing about the song.
@@ -267,6 +281,18 @@ mod tests {
         let query = clean(None, "some random upload");
         assert_eq!(query.artist, None);
         assert_eq!(query.title, "some random upload");
+    }
+
+    #[test]
+    fn only_the_first_of_a_credit_list_is_searched_for() {
+        let query = clean(
+            Some("Dj Brenno, SAM SAM, Manzzy, MC Carol"),
+            "Ilha de Capri",
+        );
+        assert_eq!(query.artist.as_deref(), Some("Dj Brenno"));
+
+        let query = clean(Some("Calvin Harris & Dua Lipa"), "One Kiss");
+        assert_eq!(query.artist.as_deref(), Some("Calvin Harris"));
     }
 
     #[test]
