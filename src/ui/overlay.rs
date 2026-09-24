@@ -156,6 +156,14 @@ impl Overlay {
         self.animate();
     }
 
+    /// Brings the overlay back to the screen, which is what a second launch
+    /// of the program should do instead of drawing another one.
+    pub fn present(&self) {
+        self.window.set_visible(true);
+        self.window.present();
+        self.set_click_through(!self.placement.borrow().positioning);
+    }
+
     /// Hides the overlay, or brings it back.
     pub fn toggle(&self) {
         let visible = self.window.is_visible();

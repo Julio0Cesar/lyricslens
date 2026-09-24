@@ -115,9 +115,6 @@ async fn once(updates: &async_channel::Sender<Update>, wanted: Option<&str>) -> 
             if let Some(lookup) = lookup.take() {
                 lookup.abort();
             }
-            if updates.send(Update::Lyrics(Box::new(None))).await.is_err() {
-                break;
-            }
             lookup = Some(tokio::spawn(fetch(
                 client.clone(),
                 track.clone(),
@@ -140,6 +137,7 @@ async fn once(updates: &async_channel::Sender<Update>, wanted: Option<&str>) -> 
 async fn fetch(client: Client, track: Track, updates: async_channel::Sender<Update>) {
     let query = from_track(&track);
     if query.title.is_empty() {
+        let _ = updates.send(Update::Lyrics(Box::new(None))).await;
         return;
     }
 
@@ -154,6 +152,7 @@ async fn fetch(client: Client, track: Track, updates: async_channel::Sender<Upda
         Ok(found) => found,
         Err(error) => {
             tracing::warn!(%error, ?query, "could not fetch lyrics");
+            let _ = updates.send(Update::Lyrics(Box::new(None))).await;
             return;
         }
     };
