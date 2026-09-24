@@ -2,14 +2,16 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use gtk::prelude::*;
-use gtk::{Application, glib};
+use adw::prelude::*;
+use gtk::glib;
 use gtk4 as gtk;
 use lyricslens::app::{self, Update};
 use lyricslens::lyrics::Lyrics;
 use lyricslens::media::{Event, Track};
+use lyricslens::store::settings::Settings;
 use lyricslens::sync::clock::Clock;
 use lyricslens::ui::overlay::Overlay;
+use lyricslens::ui::settings as preferences;
 
 /// How often the overlay asks the clock which line is being sung.
 ///
@@ -22,14 +24,21 @@ fn main() -> glib::ExitCode {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let updates = app::start();
-
-    let application = Application::builder()
+    let application = adw::Application::builder()
         .application_id("io.github.julio0cesar.lyricslens")
         .build();
 
+    if preferences::requested() {
+        application.connect_activate(preferences::open);
+        // GTK would try to make sense of our own flags otherwise.
+        return application.run_with_args::<&str>(&[]);
+    }
+
+    let settings = Settings::load();
+    let updates = app::start(settings.clone());
+
     application.connect_activate(move |application| {
-        let overlay = match Overlay::build(application) {
+        let overlay = match Overlay::build(application.upcast_ref(), &settings) {
             Ok(overlay) => overlay,
             Err(error) => {
                 tracing::error!(%error, "could not open the overlay");
@@ -37,7 +46,7 @@ fn main() -> glib::ExitCode {
             }
         };
 
-        let state = Rc::new(RefCell::new(State::default()));
+        let state = Rc::new(RefCell::new(State::new(settings.clone())));
 
         let updates = updates.clone();
         let reader = Rc::clone(&state);
@@ -53,37 +62,44 @@ fn main() -> glib::ExitCode {
         });
     });
 
-    application.run()
+    application.run_with_args::<&str>(&[])
 }
 
 /// What the overlay is showing, and everything it takes to decide that.
-#[derive(Default)]
 struct State {
+    settings: Settings,
     track: Track,
     lyrics: Option<Lyrics>,
-    clock: Option<Clock>,
+    clock: Clock,
     stalled: bool,
 }
 
 impl State {
+    fn new(settings: Settings) -> Self {
+        Self {
+            settings,
+            track: Track::default(),
+            lyrics: None,
+            clock: Clock::new(0),
+            stalled: false,
+        }
+    }
+
     fn apply(&mut self, update: Update) {
         match update {
             Update::Lyrics(lyrics) => self.lyrics = *lyrics,
+            Update::Player(name) => self.clock.set_offset_ms(self.settings.offset_ms(&name)),
             Update::Media(Event::TrackChanged(track)) => {
                 self.track = track;
                 self.stalled = false;
-                self.clock.get_or_insert_with(|| Clock::new(0)).reset();
+                self.clock.reset();
             }
             Update::Media(Event::Playback(state)) => {
                 self.stalled = false;
-                self.clock
-                    .get_or_insert_with(|| Clock::new(0))
-                    .playback(state, Instant::now());
+                self.clock.playback(state, Instant::now());
             }
             Update::Media(Event::Position { reading, at }) => {
-                self.clock
-                    .get_or_insert_with(|| Clock::new(0))
-                    .sample(reading, at);
+                self.clock.sample(reading, at);
             }
             Update::Media(Event::PositionStalled) => self.stalled = true,
         }
@@ -92,7 +108,7 @@ impl State {
     /// The words on screen right now.
     fn line(&self) -> Option<&str> {
         let lyrics = self.lyrics.as_ref()?;
-        let position = self.clock.as_ref()?.position(Instant::now())?;
+        let position = self.clock.position(Instant::now())?;
         lyrics.line_at(position)?.sung()
     }
 }

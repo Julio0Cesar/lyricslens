@@ -7,5 +7,6 @@ pub mod app;
 pub mod error;
 pub mod lyrics;
 pub mod media;
+pub mod store;
 pub mod sync;
 pub mod ui;

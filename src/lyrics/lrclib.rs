@@ -26,6 +26,14 @@ const AGENT: &str = concat!(
 /// How far a search result's duration may sit from the one being played.
 const TOLERANCE: Duration = Duration::from_secs(4);
 
+/// Lyrics as they came, with the text they were parsed from. The raw LRC is
+/// what goes to the cache: it survives a change to the parser.
+#[derive(Debug, Clone)]
+pub struct Found {
+    pub lyrics: Lyrics,
+    pub lrc: String,
+}
+
 #[derive(Clone)]
 pub struct Client {
     http: reqwest::Client,
@@ -64,9 +72,11 @@ impl Client {
         &self,
         query: &Query,
         duration: Option<Duration>,
-    ) -> Result<Option<Lyrics>, Error> {
-        if let Some(record) = self.exact(query, duration).await? {
-            return Ok(synced(&record));
+    ) -> Result<Option<Found>, Error> {
+        if let Some(record) = self.exact(query, duration).await?
+            && let Some(found) = synced(&record)
+        {
+            return Ok(Some(found));
         }
         let Some(record) = self.searched(query, duration).await? else {
             return Ok(None);
@@ -173,13 +183,16 @@ fn best(records: Vec<Record>, duration: Option<Duration>) -> Option<Record> {
 }
 
 /// The synced lyrics of a record, parsed, when it has any worth showing.
-fn synced(record: &Record) -> Option<Lyrics> {
+fn synced(record: &Record) -> Option<Found> {
     if record.instrumental {
         return None;
     }
-    let text = record.synced_lyrics.as_deref()?;
-    let lyrics = lrc::parse(text);
-    (!lyrics.is_empty()).then_some(lyrics)
+    let lrc = record.synced_lyrics.as_deref()?;
+    let lyrics = lrc::parse(lrc);
+    (!lyrics.is_empty()).then(|| Found {
+        lyrics,
+        lrc: lrc.to_owned(),
+    })
 }
 
 #[cfg(test)]
