@@ -38,6 +38,11 @@ pub struct Settings {
     /// How many lines still to come are shown under the current one, dimmed.
     /// Zero shows only what is being sung now.
     pub upcoming_lines: u8,
+    /// Fills the line word by word as the song moves through it.
+    pub karaoke: bool,
+    /// Lets the pointer reach the overlay, so it can be dragged. Off means
+    /// clicks go straight through to whatever is underneath.
+    pub movable: bool,
     /// Manual correction per player, in milliseconds. Positive means the
     /// lyrics run early and have to wait.
     pub offsets: BTreeMap<String, i64>,
@@ -55,6 +60,8 @@ impl Default for Settings {
             text_shadow: true,
             background_opacity: 0.0,
             upcoming_lines: 0,
+            karaoke: false,
+            movable: false,
             offsets: BTreeMap::new(),
         }
     }

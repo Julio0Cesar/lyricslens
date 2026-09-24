@@ -146,6 +146,7 @@ fn main() -> glib::ExitCode {
             let state = state.borrow();
             overlay.show(state.line().as_deref());
             overlay.show_upcoming(&state.upcoming());
+            overlay.show_progress(state.progress());
             glib::ControlFlow::Continue
         });
     });
@@ -271,6 +272,12 @@ impl State {
             }
             Update::Media(Event::PositionStalled) => self.stalled = true,
         }
+    }
+
+    /// How far through the current line the song is.
+    fn progress(&self) -> Option<f64> {
+        let position = self.clock.position(Instant::now())?;
+        self.lyrics.as_ref()?.progress_at(position)
     }
 
     /// The lines still to come, as many as the settings ask for.

@@ -71,7 +71,6 @@ pub fn open(app: &adw::Application) {
             save(&settings.borrow(), &app);
         }
     });
-    player.add(&screen);
 
     let look = adw::PreferencesGroup::builder()
         .title("Appearance")
@@ -167,6 +166,21 @@ pub fn open(app: &adw::Application) {
     });
     look.add(&upcoming);
 
+    let karaoke = adw::SwitchRow::builder()
+        .title("Karaoke")
+        .subtitle("Fills the line as the song moves through it")
+        .active(settings.borrow().karaoke)
+        .build();
+    karaoke.connect_active_notify({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            settings.borrow_mut().karaoke = row.is_active();
+            save(&settings.borrow(), &app);
+        }
+    });
+    look.add(&karaoke);
+
     let timing = adw::PreferencesGroup::builder()
         .title("Timing")
         .description("Positive holds the lyrics back, negative brings them forward.")
@@ -195,6 +209,27 @@ pub fn open(app: &adw::Application) {
     });
     timing.add(&offset);
 
+    let place = adw::PreferencesGroup::builder()
+        .title("Position")
+        .description("A layer surface belongs to one screen and cannot be dragged to another.")
+        .build();
+
+    let movable = adw::SwitchRow::builder()
+        .title("Let me move it")
+        .subtitle("The overlay takes your clicks while this is on, so you can drag it")
+        .active(settings.borrow().movable)
+        .build();
+    movable.connect_active_notify({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            settings.borrow_mut().movable = row.is_active();
+            save(&settings.borrow(), &app);
+        }
+    });
+    place.add(&movable);
+    place.add(&screen);
+
     // A program with no window of its own needs a way out that is not the
     // tray, for the desktops that have none.
     let close = adw::PreferencesGroup::new();
@@ -211,6 +246,7 @@ pub fn open(app: &adw::Application) {
 
     page.add(&player);
     page.add(&look);
+    page.add(&place);
     page.add(&timing);
     page.add(&close);
     window.add(&page);

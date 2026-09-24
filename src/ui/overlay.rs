@@ -18,8 +18,11 @@ use crate::store::settings::Settings;
 
 mod x11;
 
-/// Half a fade. One line goes out over this, the next comes in over it.
-const FADE: Duration = Duration::from_millis(140);
+/// Half a change. One line goes out over this, the next comes in over it.
+const FADE: Duration = Duration::from_millis(160);
+
+/// How far below its place the incoming line starts, in pixels.
+const RISE: i32 = 22;
 
 /// Marks the window while it is being moved, so there is something to grab.
 const POSITIONING: &str = "positioning";
@@ -61,7 +64,8 @@ fn style(settings: &Settings) -> String {
              font-size: {small}px;
              font-weight: 400;
              opacity: 0.55;
-         }}",
+         }}
+         window.{OVERLAY} label.unsung {{ opacity: 0.45; }}",
         color = settings.text_color,
         size = settings.font_size,
         small = (settings.font_size * 7 / 10).max(10),
@@ -73,7 +77,13 @@ pub struct Overlay {
     window: ApplicationWindow,
     /// The line being sung, and the ones still to come under it.
     lines: gtk::Box,
+    /// Fixed height, so the line can slide inside it without the surface
+    /// growing and shrinking on every frame.
+    stage: gtk::Box,
     current: Label,
+    /// The same words in full colour, clipped to how far the song has gone.
+    sung: Label,
+    clip: gtk::Box,
     upcoming: Label,
     provider: CssProvider,
     fade: Rc<RefCell<Fade>>,
@@ -114,7 +124,31 @@ impl Overlay {
         let current = Label::builder()
             .justify(gtk::Justification::Center)
             .wrap(true)
+            .opacity(0.0)
             .build();
+        let sung = Label::builder()
+            .justify(gtk::Justification::Center)
+            .wrap(true)
+            .xalign(0.0)
+            .build();
+
+        // The bright copy sits on top of the dim one and is cut off at the
+        // point the song has reached.
+        let clip = gtk::Box::builder()
+            .halign(gtk::Align::Start)
+            .overflow(gtk::Overflow::Hidden)
+            .visible(false)
+            .build();
+        clip.append(&sung);
+
+        let stacked = gtk::Overlay::builder().child(&current).build();
+        stacked.add_overlay(&clip);
+
+        let stage = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .overflow(gtk::Overflow::Hidden)
+            .build();
+        stage.append(&stacked);
         let upcoming = Label::builder()
             .justify(gtk::Justification::Center)
             .wrap(true)
@@ -127,10 +161,9 @@ impl Overlay {
             .spacing(4)
             .halign(gtk::Align::Center)
             .valign(gtk::Align::End)
-            .opacity(0.0)
             .build();
         lines.add_css_class("lines");
-        lines.append(&current);
+        lines.append(&stage);
         lines.append(&upcoming);
 
         let window = ApplicationWindow::builder()
@@ -163,7 +196,10 @@ impl Overlay {
         let overlay = Self {
             window,
             lines,
+            stage,
             current,
+            sung,
+            clip,
             upcoming,
             provider,
             fade: Rc::new(RefCell::new(Fade {
@@ -206,6 +242,29 @@ impl Overlay {
         self.animate();
     }
 
+    /// How far through the line the song is, from 0 to 1.
+    ///
+    /// Does nothing unless karaoke is on, and nothing while the line is
+    /// changing: a half-drawn fill under a sliding line reads as a glitch.
+    pub fn show_progress(&self, progress: Option<f64>) {
+        let karaoke = self.placement.borrow().settings.karaoke;
+        let Some(progress) = progress.filter(|_| karaoke && !self.fade.borrow().running) else {
+            self.clip.set_visible(false);
+            self.current.remove_css_class("unsung");
+            return;
+        };
+
+        let width = self.current.width();
+        if width <= 0 {
+            return;
+        }
+        self.current.add_css_class("unsung");
+        self.sung.set_width_request(width);
+        self.clip
+            .set_width_request(((f64::from(width) * progress) as i32).max(1));
+        self.clip.set_visible(true);
+    }
+
     /// The lines still to come, under the one being sung.
     pub fn show_upcoming(&self, lines: &[String]) {
         if lines.is_empty() {
@@ -219,8 +278,20 @@ impl Overlay {
     /// Takes the settings again, after the preferences window changed them.
     pub fn reload(&self, settings: &Settings) {
         self.provider.load_from_string(&style(settings));
-        self.placement.borrow_mut().settings = settings.clone();
+        let movable = settings.movable;
+        {
+            let mut placement = self.placement.borrow_mut();
+            placement.settings = settings.clone();
+            placement.positioning = movable;
+        }
+        if movable {
+            self.window.add_css_class(POSITIONING);
+            self.current.set_opacity(1.0);
+        } else {
+            self.window.remove_css_class(POSITIONING);
+        }
         self.place();
+        self.set_click_through(!movable);
     }
 
     /// Brings the overlay back to the screen, which is what a second launch
@@ -250,13 +321,16 @@ impl Overlay {
         let positioning = {
             let mut placement = self.placement.borrow_mut();
             placement.positioning = !placement.positioning;
+            // The switch in the preferences window reads this, so the two
+            // cannot be left disagreeing.
+            placement.settings.movable = placement.positioning;
             placement.positioning
         };
 
         if positioning {
             self.window.add_css_class(POSITIONING);
             self.window.set_visible(true);
-            self.lines.set_opacity(1.0);
+            self.current.set_opacity(1.0);
             if self.current.text().is_empty() {
                 self.current.set_text("drag me");
             }
@@ -428,37 +502,52 @@ impl Overlay {
         let started = Instant::now();
         let fade = Rc::clone(&self.fade);
         let current = self.current.clone();
+        let sung = self.sung.clone();
+        let clip = self.clip.clone();
+        let stage = self.stage.clone();
         let swapped = std::cell::Cell::new(false);
 
-        self.lines.add_tick_callback(move |lines, _| {
+        self.lines.add_tick_callback(move |_, _| {
             let elapsed = started.elapsed();
 
+            // Out: the line fades where it stands.
             if elapsed < FADE {
-                lines.set_opacity(1.0 - elapsed.as_secs_f64() / FADE.as_secs_f64());
+                current.set_opacity(1.0 - elapsed.as_secs_f64() / FADE.as_secs_f64());
                 return ControlFlow::Continue;
             }
 
             if !swapped.get() {
                 swapped.set(true);
+                clip.set_visible(false);
                 let mut state = fade.borrow_mut();
                 state.shown = state.wanted.clone();
-                current.set_text(state.shown.as_deref().unwrap_or_default());
+                let text = state.shown.clone().unwrap_or_default();
+                current.set_text(&text);
+                sung.set_text(&text);
+                // Fixing the height here is what lets the line slide inside a
+                // box that does not resize, so the surface stays put.
+                let (_, natural, _, _) = current.measure(gtk::Orientation::Vertical, -1);
+                stage.set_size_request(-1, natural.max(1));
             }
 
-            // Nothing to fade in during an instrumental: the screen stays empty.
             if fade.borrow().shown.is_none() {
                 fade.borrow_mut().running = false;
-                lines.set_opacity(0.0);
+                current.set_opacity(0.0);
+                current.set_margin_top(0);
                 return ControlFlow::Break;
             }
 
-            let progress = (elapsed - FADE).as_secs_f64() / FADE.as_secs_f64();
+            // In: it comes up from below as it appears.
+            let progress = ((elapsed - FADE).as_secs_f64() / FADE.as_secs_f64()).min(1.0);
+            let eased = 1.0 - (1.0 - progress).powi(3);
+            current.set_opacity(eased);
+            current.set_margin_top((f64::from(RISE) * (1.0 - eased)) as i32);
+
             if progress >= 1.0 {
-                lines.set_opacity(1.0);
+                current.set_margin_top(0);
                 fade.borrow_mut().running = false;
                 return ControlFlow::Break;
             }
-            lines.set_opacity(progress);
             ControlFlow::Continue
         });
     }

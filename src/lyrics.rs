@@ -60,6 +60,28 @@ impl Lyrics {
         index.checked_sub(1).map(|index| &self.lines[index])
     }
 
+    /// How far through the current line the song is, from 0 to 1.
+    ///
+    /// Lines carry one timestamp, not one per word, so this is the share of
+    /// the time between this line and the next — close enough to follow, and
+    /// the only thing the data supports.
+    pub fn progress_at(&self, position: Duration) -> Option<f64> {
+        let position = self.shifted(position);
+        let index = self.lines.partition_point(|line| line.at <= position);
+        let current = self.lines.get(index.checked_sub(1)?)?;
+
+        let ends = match self.lines.get(index) {
+            Some(next) => next.at,
+            // The last line has no end; hold it full rather than guessing.
+            None => return Some(1.0),
+        };
+        let span = ends.checked_sub(current.at)?.as_secs_f64();
+        if span <= 0.0 {
+            return Some(1.0);
+        }
+        Some(((position - current.at).as_secs_f64() / span).clamp(0.0, 1.0))
+    }
+
     /// The next lines to be sung, skipping the silences.
     ///
     /// An instrumental gap is left out on purpose: showing a blank line in a
@@ -145,6 +167,16 @@ mod tests {
         assert_eq!(song.after(Duration::from_secs(0), 2), ["first", "second"]);
         assert_eq!(song.after(Duration::from_secs(12), 2), ["second"]);
         assert!(song.after(Duration::from_secs(600), 2).is_empty());
+    }
+
+    #[test]
+    fn progress_runs_from_the_line_to_the_next() {
+        let song = song();
+        assert_eq!(song.progress_at(Duration::from_secs(10)), Some(0.0));
+        assert_eq!(song.progress_at(Duration::from_secs(15)), Some(0.5));
+        assert_eq!(song.progress_at(Duration::from_secs(5)), None);
+        // The last line has no next one to measure against.
+        assert_eq!(song.progress_at(Duration::from_secs(600)), Some(1.0));
     }
 
     #[test]

@@ -118,8 +118,12 @@ screen is a choice in the preferences rather than a drag across the edge.
 
 The preferences window holds the font size, the text colour, the shadow that
 keeps it readable over a bright window, how dark the strip behind the line is,
-and how many lines still to come are shown dimmed underneath. Every one of them
-shows on the overlay straight away.
+how many lines still to come are shown dimmed underneath, and a karaoke mode
+that fills the line as the song moves through it. Every one of them shows on
+the overlay straight away.
+
+The same window has the switch that lets you drag the overlay, and the screen
+it lives on.
 
 ## What it needs from a player
 
