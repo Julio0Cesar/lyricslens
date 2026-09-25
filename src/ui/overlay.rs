@@ -37,6 +37,9 @@ const SPACING: i32 = 6;
 const WAITING_SCALE: f64 = 0.7;
 const WAITING_OPACITY: f64 = 0.45;
 
+/// How faint the words that have not been sung yet are, out of 65535.
+const UNSUNG_ALPHA: u16 = 0x6000;
+
 /// The line being sung and three waiting. More is a wall of text.
 const ROWS: usize = 4;
 
@@ -75,29 +78,19 @@ fn style(settings: &Settings) -> String {
              font-size: {size}px;
              font-weight: 600;
              {shadow}
-         }}
-         window.{OVERLAY} label.unsung {{ opacity: 0.45; }}",
+         }}",
         color = settings.text_color,
         size = settings.font_size,
     )
 }
 
-/// How much of a line has been sung, in pixels.
+/// How much of a line has been sung, as a byte offset into it.
 ///
-/// The highlight lands on word boundaries rather than sweeping through the
-/// middle of a word. Lyrics carry one timestamp per line, so where a word
-/// falls inside it is an estimate: the line's time is shared out by how long
-/// each word is. That reads as karaoke, which a smooth wipe never does.
-fn sung_width(label: &Label, progress: f64) -> i32 {
-    let text = label.text();
-    let layout = label.layout();
-
-    // A line that wrapped has no single left-to-right run to cut, so it falls
-    // back to a plain share of the width.
-    if layout.line_count() > 1 {
-        return ((f64::from(label.width()) * progress) as i32).max(1);
-    }
-
+/// The highlight lands on word boundaries rather than in the middle of a word.
+/// Lyrics carry one timestamp per line, so where a word falls inside it is an
+/// estimate: the line's time is shared out by how long each word is. That
+/// reads as karaoke, which a smooth wipe never does.
+fn sung_bytes(text: &str, progress: f64) -> usize {
     let words: Vec<(usize, usize)> =
         text.char_indices()
             .fold(Vec::new(), |mut words: Vec<(usize, usize)>, (at, c)| {
@@ -110,39 +103,31 @@ fn sung_width(label: &Label, progress: f64) -> i32 {
                 }
                 words
             });
-    if words.is_empty() {
-        return 1;
-    }
 
     let total: usize = words.iter().map(|(from, to)| to - from).sum();
+    if total == 0 {
+        return text.len();
+    }
+
     let mut sung = 0usize;
-    let mut ends = words[0].1;
+    let mut ends = 0usize;
     for (from, to) in &words {
-        if f64::from(u32::try_from(sung).unwrap_or(u32::MAX))
-            / f64::from(u32::try_from(total).unwrap_or(1))
-            >= progress
-        {
+        if sung as f64 / total as f64 >= progress {
             break;
         }
         sung += to - from;
         ends = *to;
     }
-
-    let position = layout.index_to_pos(i32::try_from(ends).unwrap_or(0));
-    ((position.x() + position.width()) / pango::SCALE).max(1)
+    ends
 }
 
 /// One line on screen.
 ///
 /// The same widget carries a line from the bottom of the column to the centre.
-/// That is the whole point: nothing is removed and redrawn somewhere else.
+/// That is the whole point: nothing is removed and drawn again somewhere else.
 #[derive(Clone)]
 struct Row {
-    root: gtk::Overlay,
     text: Label,
-    /// The same words in full colour, clipped to how far the song has gone.
-    sung: Label,
-    clip: gtk::Box,
 }
 
 impl Row {
@@ -152,57 +137,50 @@ impl Row {
             .wrap(true)
             .halign(gtk::Align::Center)
             .build();
-        // Laid out exactly like the line underneath — same width, same
-        // centring — so cutting it from the left reveals the same words in the
-        // same places.
-        let sung = Label::builder()
-            .justify(gtk::Justification::Center)
-            .wrap(true)
-            .halign(gtk::Align::Start)
-            .build();
+        Self { text }
+    }
 
-        let clip = gtk::Box::builder()
-            .halign(gtk::Align::Start)
-            .valign(gtk::Align::Fill)
-            .overflow(gtk::Overflow::Hidden)
-            .visible(false)
-            .build();
-        clip.append(&sung);
-
-        let root = gtk::Overlay::builder()
-            .child(&text)
-            .halign(gtk::Align::Center)
-            .build();
-        root.add_overlay(&clip);
-
-        Self {
-            root,
-            text,
-            sung,
-            clip,
-        }
+    fn root(&self) -> &Label {
+        &self.text
     }
 
     fn set_text(&self, text: &str) {
         self.text.set_text(text);
-        self.sung.set_text(text);
-        self.root.set_visible(!text.is_empty());
+        self.text.set_visible(!text.is_empty());
     }
 
     fn text(&self) -> String {
         self.text.text().to_string()
     }
 
-    /// How big and how bright, from 0 while waiting to 1 while being sung.
-    fn set_weight(&self, weight: f64) {
+    /// How big and how bright, from 0 while waiting to 1 while being sung, and
+    /// how far the singer has got through it.
+    ///
+    /// The words already sung are drawn at full strength and the rest faded,
+    /// by colouring two ranges of the same text. A second label on top, cut to
+    /// width, was the obvious way and the wrong one: a box grows to whatever
+    /// its child asks for, so the copy always covered the whole line.
+    fn paint(&self, weight: f64, sung: Option<usize>) {
         let weight = weight.clamp(0.0, 1.0);
-        let scale = WAITING_SCALE + (1.0 - WAITING_SCALE) * weight;
         let attributes = pango::AttrList::new();
-        attributes.insert(pango::AttrFloat::new_scale(scale));
+        attributes.insert(pango::AttrFloat::new_scale(
+            WAITING_SCALE + (1.0 - WAITING_SCALE) * weight,
+        ));
+
+        if let Some(sung) = sung {
+            let bytes = u32::try_from(sung).unwrap_or(u32::MAX);
+            let mut faded = pango::AttrInt::new_foreground_alpha(UNSUNG_ALPHA);
+            faded.set_start_index(bytes);
+            attributes.insert(faded);
+        }
+
         self.text.set_attributes(Some(&attributes));
-        self.sung.set_attributes(Some(&attributes));
-        self.root
+        self.text
             .set_opacity(WAITING_OPACITY + (1.0 - WAITING_OPACITY) * weight);
+    }
+
+    fn set_weight(&self, weight: f64) {
+        self.paint(weight, None);
     }
 
     /// Shrinking and fading as it leaves the top of the column.
@@ -210,8 +188,7 @@ impl Row {
         let attributes = pango::AttrList::new();
         attributes.insert(pango::AttrFloat::new_scale(1.0 - 0.15 * progress));
         self.text.set_attributes(Some(&attributes));
-        self.sung.set_attributes(Some(&attributes));
-        self.root.set_opacity(1.0 - progress);
+        self.text.set_opacity(1.0 - progress);
     }
 }
 
@@ -270,9 +247,9 @@ impl Overlay {
 
         let rows: Vec<Row> = (0..ROWS).map(|_| Row::new()).collect();
         for (index, row) in rows.iter().enumerate() {
-            row.root.set_visible(false);
+            row.root().set_visible(false);
             row.set_weight(if index == 0 { 1.0 } else { 0.0 });
-            column.append(&row.root);
+            column.append(row.root());
         }
 
         // A window onto the column, scrolled by hand. Doing the clipping any
@@ -416,10 +393,10 @@ impl Overlay {
 
         let mut height = 0;
         for row in self.rows.iter().take(visible) {
-            if !row.root.is_visible() {
+            if !row.root().is_visible() {
                 continue;
             }
-            let (_, natural, _, _) = row.root.measure(gtk::Orientation::Vertical, -1);
+            let (_, natural, _, _) = row.root().measure(gtk::Orientation::Vertical, -1);
             height += natural + SPACING;
         }
         if height <= SPACING {
@@ -435,7 +412,7 @@ impl Overlay {
         // The height it has on screen, not the one it would like: a line that
         // wrapped is taller than its unconstrained measurement, and scrolling
         // by the smaller number leaves the row that left still showing.
-        let step = f64::from(self.rows[0].root.height() + SPACING);
+        let step = f64::from(self.rows[0].root().height() + SPACING);
         if step <= f64::from(SPACING) {
             let wanted = self.motion.borrow().wanted.clone();
             self.motion.borrow_mut().running = false;
@@ -476,25 +453,15 @@ impl Overlay {
     /// How far through the line the song is, from 0 to 1.
     ///
     /// Does nothing unless karaoke is on, and nothing while the column is
-    /// moving: a half-drawn fill under a sliding line reads as a glitch.
+    /// moving: a half-drawn line under a sliding one reads as a glitch.
     pub fn show_progress(&self, progress: Option<f64>) {
         let karaoke = self.placement.borrow().settings.karaoke;
         let row = &self.rows[0];
         let Some(progress) = progress.filter(|_| karaoke && !self.motion.borrow().running) else {
-            row.clip.set_visible(false);
-            row.text.remove_css_class("unsung");
+            row.paint(1.0, None);
             return;
         };
-
-        let width = row.text.width();
-        if width <= 0 {
-            return;
-        }
-        row.text.add_css_class("unsung");
-        row.sung.set_size_request(width, -1);
-        row.clip
-            .set_size_request(sung_width(&row.text, progress), -1);
-        row.clip.set_visible(true);
+        row.paint(1.0, Some(sung_bytes(&row.text(), progress)));
     }
 
     /// Takes the settings again, after the preferences window changed them.
