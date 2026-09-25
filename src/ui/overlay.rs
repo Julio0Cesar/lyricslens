@@ -82,6 +82,56 @@ fn style(settings: &Settings) -> String {
     )
 }
 
+/// How much of a line has been sung, in pixels.
+///
+/// The highlight lands on word boundaries rather than sweeping through the
+/// middle of a word. Lyrics carry one timestamp per line, so where a word
+/// falls inside it is an estimate: the line's time is shared out by how long
+/// each word is. That reads as karaoke, which a smooth wipe never does.
+fn sung_width(label: &Label, progress: f64) -> i32 {
+    let text = label.text();
+    let layout = label.layout();
+
+    // A line that wrapped has no single left-to-right run to cut, so it falls
+    // back to a plain share of the width.
+    if layout.line_count() > 1 {
+        return ((f64::from(label.width()) * progress) as i32).max(1);
+    }
+
+    let words: Vec<(usize, usize)> =
+        text.char_indices()
+            .fold(Vec::new(), |mut words: Vec<(usize, usize)>, (at, c)| {
+                if c.is_whitespace() {
+                    return words;
+                }
+                match words.last_mut() {
+                    Some(word) if word.1 == at => word.1 = at + c.len_utf8(),
+                    _ => words.push((at, at + c.len_utf8())),
+                }
+                words
+            });
+    if words.is_empty() {
+        return 1;
+    }
+
+    let total: usize = words.iter().map(|(from, to)| to - from).sum();
+    let mut sung = 0usize;
+    let mut ends = words[0].1;
+    for (from, to) in &words {
+        if f64::from(u32::try_from(sung).unwrap_or(u32::MAX))
+            / f64::from(u32::try_from(total).unwrap_or(1))
+            >= progress
+        {
+            break;
+        }
+        sung += to - from;
+        ends = *to;
+    }
+
+    let position = layout.index_to_pos(i32::try_from(ends).unwrap_or(0));
+    ((position.x() + position.width()) / pango::SCALE).max(1)
+}
+
 /// One line on screen.
 ///
 /// The same widget carries a line from the bottom of the column to the centre.
@@ -443,7 +493,7 @@ impl Overlay {
         row.text.add_css_class("unsung");
         row.sung.set_size_request(width, -1);
         row.clip
-            .set_size_request(((f64::from(width) * progress) as i32).max(1), -1);
+            .set_size_request(sung_width(&row.text, progress), -1);
         row.clip.set_visible(true);
     }
 
