@@ -15,12 +15,15 @@ jobs:
   tag:
     name: Tag the version on main
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Tag, unless that version is already out
+        id: tag
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -31,12 +34,23 @@ jobs:
             echo "$tag already exists; nothing to do"
             exit 0
           fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # The tag only. The release is published by the build below, with
+          # its files attached — a release that exists without them is one
+          # `--upgrade` downloads a 404 from.
           git tag -a "$tag" -m "LyricsLens $tag"
           git push origin "$tag"
 
-          notes=$(git log --format='- %s' "$(git describe --tags --abbrev=0 "$tag^" 2>/dev/null || git rev-list --max-parents=0 HEAD)..$tag^" \
-            | grep -v '^- Merge ' || true)
-          gh release create "$tag" --title "$tag" --notes "${notes:-See the commits for what changed.}"
+  # The tag above cannot start this by itself, so it is called here.
+  release:
+    name: Build the release
+    needs: tag
+    if: needs.tag.outputs.tag != ''
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}
+    permissions:
+      contents: write

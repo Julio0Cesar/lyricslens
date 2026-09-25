@@ -3,6 +3,16 @@ name: Release
 # Publishes the artefacts install.sh downloads. Runs on a tag, never on a push
 # to main: a release is a deliberate act.
 on:
+  # Called by the workflow that creates the tag. A tag pushed by a workflow
+  # does not start another one — GitHub refuses, to keep workflows from
+  # triggering each other forever — so the build has to be called, not waited
+  # for.
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag to build and attach the artefacts to
+        required: true
+        type: string
   push:
     tags: ["v*"]
   workflow_dispatch:
@@ -53,9 +63,18 @@ jobs:
           echo "archive=$dir.tar.gz" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Attach to the release
+      # Created with its files in one go, so the release is never on offer
+      # without the archive `--upgrade` goes looking for.
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ steps.pack.outputs.tag }}" \
-            "${{ steps.pack.outputs.archive }}" SHA256SUMS --clobber
+          tag="${{ steps.pack.outputs.tag }}"
+          archive="${{ steps.pack.outputs.archive }}"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$archive" SHA256SUMS --clobber
+          else
+            gh release create "$tag" "$archive" SHA256SUMS \
+              --title "$tag" --generate-notes
+          fi
