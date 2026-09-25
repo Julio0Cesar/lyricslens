@@ -126,6 +126,7 @@ fn main() -> glib::ExitCode {
         };
 
         add_commands(application, &overlay, &search);
+        ask_for_the_keys(&settings);
 
         // The icon in the status bar is the only handle a program with no
         // window of its own gives the person running it.
@@ -192,6 +193,21 @@ fn main() -> glib::ExitCode {
     });
 
     application.run_with_args::<&str>(&[])
+}
+
+/// Asks the compositor for the key combinations the settings name.
+///
+/// Every failure is survivable: the overlay runs, and the tray icon and the
+/// preferences window are still there to reach it by.
+fn ask_for_the_keys(settings: &Settings) {
+    for (combination, flag) in [
+        (&settings.hotkey_toggle, "--toggle"),
+        (&settings.hotkey_position, "--position"),
+    ] {
+        if let Err(error) = lyricslens::desktop::bind(combination, flag) {
+            tracing::warn!(%error, combination, flag, "the key was not taken");
+        }
+    }
 }
 
 /// The action a command-line flag asks the running overlay for.

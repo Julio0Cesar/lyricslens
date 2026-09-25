@@ -16,6 +16,11 @@ const FILE: &str = "settings.toml";
 pub struct Settings {
     /// Part of a player's bus name, when more than one is running.
     pub player: Option<String>,
+    /// The key combination that shows and hides the overlay, written the way
+    /// Hyprland writes it: `SUPER SHIFT, L`. Empty asks for nothing.
+    pub hotkey_toggle: String,
+    /// The same, for the mode where the overlay can be dragged.
+    pub hotkey_position: String,
     /// Which screen the overlay lives on, by connector name — `HDMI-A-1` and
     /// the like. A layer surface belongs to one screen and cannot be dragged
     /// to another, so it is chosen rather than moved. Absent means whichever
@@ -57,6 +62,8 @@ impl Default for Settings {
         Self {
             player: None,
             monitor: None,
+            hotkey_toggle: String::new(),
+            hotkey_position: String::new(),
             bottom_margin: 100,
             left_margin: None,
             font_size: 30,

@@ -278,6 +278,88 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
 
     // A program with no window of its own needs a way out that is not the
     // tray, for the desktops that have none.
+    let keys = Section::new(
+        "Keys",
+        &match crate::desktop::compositor() {
+            crate::desktop::Compositor::Unknown => {
+                "This desktop cannot be asked for a key. Bind one yourself to `lyricslens --toggle`."
+                    .to_owned()
+            }
+            found => format!(
+                "Asked of {found:?} when the program starts, and forgotten when it restarts. \
+                 Nothing is written to your configuration."
+            ),
+        },
+    );
+
+    let toggle_key = adw::EntryRow::builder()
+        .title("Show and hide")
+        .text(settings.borrow().hotkey_toggle.clone())
+        .build();
+    toggle_key.connect_changed({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            settings.borrow_mut().hotkey_toggle = row.text().trim().to_owned();
+            save(&settings.borrow(), &app);
+        }
+    });
+    keys.add(&toggle_key);
+
+    let position_key = adw::EntryRow::builder()
+        .title("Move it")
+        .text(settings.borrow().hotkey_position.clone())
+        .build();
+    position_key.connect_changed({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            settings.borrow_mut().hotkey_position = row.text().trim().to_owned();
+            save(&settings.borrow(), &app);
+        }
+    });
+    keys.add(&position_key);
+
+    let keys_note = gtk::Label::builder()
+        .label(
+            "Written the way Hyprland writes it, for example SUPER SHIFT, L. \
+             Takes effect the next time the program starts.",
+        )
+        .wrap(true)
+        .xalign(0.0)
+        .margin_top(4)
+        .build();
+    keys_note.add_css_class("dim-label");
+    keys.add(&keys_note);
+
+    // Hyprland stopped taking the request in 0.56, so the line to paste is
+    // offered whatever the desktop: it is the one thing that always works.
+    let line = adw::ActionRow::builder()
+        .title("Line for your configuration")
+        .subtitle(crate::desktop::snippet(
+            &settings.borrow().hotkey_toggle,
+            "--toggle",
+        ))
+        .build();
+    let copy = gtk::Button::builder()
+        .icon_name("edit-copy-symbolic")
+        .valign(gtk::Align::Center)
+        .tooltip_text("Copy")
+        .build();
+    copy.add_css_class("flat");
+    copy.connect_clicked({
+        let settings = settings.clone();
+        move |button| {
+            let text = crate::desktop::snippet(&settings.borrow().hotkey_toggle, "--toggle");
+            if let Some(display) = gtk::gdk::Display::default() {
+                display.clipboard().set_text(&text);
+            }
+            button.set_tooltip_text(Some("Copied"));
+        }
+    });
+    line.add_suffix(&copy);
+    keys.add(&line);
+
     let start = Section::new(
         "Starting",
         "The switch reads the file it writes, so it can never show on for something that is off.",
@@ -313,7 +395,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
         page.add(&divider());
         page.add(&lyrics_group(&search).group);
     }
-    for section in [&look, &place, &timing, &start, &close] {
+    for section in [&look, &place, &timing, &keys, &start, &close] {
         page.add(&divider());
         page.add(&section.group);
     }

@@ -98,7 +98,9 @@ use `lyricslens --quit` or the preferences window.
 ### A key to hide it
 
 Wayland gives an ordinary program no way to claim a key combination, so the
-binding belongs to your compositor. On Hyprland, in `hyprland.conf`:
+binding belongs to your compositor. The preferences window writes the line for
+you — type the combination under *Keys* and copy what it shows. On Hyprland it
+goes in `hyprland.conf`:
 
 ```conf
 bind = SUPER, L, exec, lyricslens --toggle
