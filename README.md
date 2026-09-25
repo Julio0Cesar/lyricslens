@@ -192,6 +192,9 @@ Two decisions carry the rest, and both came from measurement:
 | --- | --- |
 | `~/.config/lyricslens/settings.toml` | preferences, readable and editable by hand |
 | `~/.cache/lyricslens/` | one LRC file per recording, so a song already played works offline |
+| `~/.local/state/lyricslens/lyricslens.log` | what happened, for a bug report; rolls over at 1 MiB |
+
+`lyricslens --paths` prints all three.
 
 ## Contributing
 

@@ -22,7 +22,7 @@ Options:
       --toggle      hide the overlay, or bring it back
       --position    drag the overlay somewhere else, then press again
       --quit        close the overlay that is running
-      --paths       print where the settings, cache and lyrics live
+      --paths       print where the settings, the cache and the log live
       --upgrade     install the newest release over this one
       --uninstall   remove the program from ~/.local
 
@@ -77,11 +77,20 @@ pub fn handle() -> Option<u8> {
     None
 }
 
-/// Whether this run should hold on to the terminal.
+/// Whether this run should stay put rather than starting a copy of itself in
+/// the background.
 ///
 /// The child started by [`detach`] carries a marker, or it would fork forever.
 pub fn wants_foreground() -> bool {
-    std::env::args().any(|argument| argument == "--foreground") || std::env::var_os(CHILD).is_some()
+    holds_terminal() || std::env::var_os(CHILD).is_some()
+}
+
+/// Whether there is a terminal to print to.
+///
+/// The child in the background has none — its output goes nowhere — so its log
+/// belongs in a file. Only `--foreground` means someone is watching.
+pub fn holds_terminal() -> bool {
+    std::env::args().any(|argument| argument == "--foreground")
 }
 
 /// Marks the copy that was started in the background, so it does not try to
@@ -153,6 +162,7 @@ fn paths() {
         crate::store::config_dir().map(|dir| dir.join("settings.toml")),
     );
     show("lyrics", crate::store::cache_dir());
+    show("log", crate::log::path());
     println!(
         "{:10} {}",
         "binary",
