@@ -181,6 +181,21 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     });
     look.add(&dim);
 
+    let previous = adw::SwitchRow::builder()
+        .title("Line just sung")
+        .subtitle("Kept above the current one, dimmed")
+        .active(settings.borrow().previous_line)
+        .build();
+    previous.connect_active_notify({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            settings.borrow_mut().previous_line = row.is_active();
+            save(&settings.borrow(), &app);
+        }
+    });
+    look.add(&previous);
+
     let upcoming = adw::SpinRow::with_range(0.0, 3.0, 1.0);
     upcoming.set_title("Lines still to come");
     upcoming.set_subtitle(

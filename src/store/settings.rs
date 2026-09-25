@@ -40,6 +40,8 @@ pub struct Settings {
     /// How dark the strip behind the line is, from 0 for nothing to 1 for
     /// solid black. Anything above zero also rounds its corners.
     pub background_opacity: f64,
+    /// Shows the line just sung above the current one, dimmed.
+    pub previous_line: bool,
     /// How many lines still to come are shown under the current one, dimmed.
     /// Zero shows only what is being sung now.
     pub upcoming_lines: u8,
@@ -70,6 +72,7 @@ impl Default for Settings {
             text_color: "#ffffff".to_owned(),
             text_shadow: true,
             background_opacity: 0.0,
+            previous_line: false,
             upcoming_lines: 0,
             karaoke: false,
             hide_when_paused: true,

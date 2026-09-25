@@ -120,9 +120,9 @@ screen is a choice in the preferences rather than a drag across the edge.
 
 The preferences window holds the font size, the text colour, the shadow that
 keeps it readable over a bright window, how dark the strip behind the line is,
-how many lines still to come are shown dimmed underneath, a karaoke mode that
-fills the line as the song moves through it, and whether the overlay clears
-while the player is paused. Every one of them shows on
+the line just sung above and how many are shown coming up underneath, a
+karaoke mode that fills the line as the song moves through it, and whether the
+overlay clears while the player is paused. Every one of them shows on
 the overlay straight away.
 
 The same window has the switch that lets you drag the overlay, the screen it

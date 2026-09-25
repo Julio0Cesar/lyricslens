@@ -60,6 +60,16 @@ impl Lyrics {
         index.checked_sub(1).map(|index| &self.lines[index])
     }
 
+    /// The line sung just before this one, skipping the silences.
+    pub fn before(&self, position: Duration) -> Option<&str> {
+        let position = self.shifted(position);
+        let index = self.lines.partition_point(|line| line.at <= position);
+        self.lines[..index.checked_sub(1)?]
+            .iter()
+            .rev()
+            .find_map(|line| line.sung())
+    }
+
     /// How far through the current line the song is, from 0 to 1.
     ///
     /// Lines carry one timestamp, not one per word, so this is the share of
@@ -177,6 +187,15 @@ mod tests {
         assert_eq!(song.progress_at(Duration::from_secs(5)), None);
         // The last line has no next one to measure against.
         assert_eq!(song.progress_at(Duration::from_secs(600)), Some(1.0));
+    }
+
+    #[test]
+    fn the_line_before_skips_the_silences() {
+        let song = song();
+        assert_eq!(song.before(Duration::from_secs(35)), Some("first"));
+        // Nothing has been sung yet at the very start.
+        assert_eq!(song.before(Duration::from_secs(12)), None);
+        assert_eq!(song.before(Duration::from_secs(5)), None);
     }
 
     #[test]
