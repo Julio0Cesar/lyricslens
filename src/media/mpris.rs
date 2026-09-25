@@ -157,6 +157,11 @@ pub async fn follow(
 
     let mut seen: Option<(Duration, Instant)> = None;
     let mut stalled = false;
+    /// A player that has gone stops answering long before its name leaves the
+    /// bus, and the signal stream it owned simply goes quiet. Without this the
+    /// clock keeps counting and the overlay sings on alone.
+    const GONE_AFTER: u32 = 6;
+    let mut unanswered = 0u32;
 
     let mut ticker = tokio::time::interval(POLL);
     // A tick that arrives late is a tick that is no longer true; skip it rather
@@ -169,9 +174,16 @@ pub async fn follow(
             _ = ticker.tick(), if state == Playback::Playing && !stalled => {
                 let at = Instant::now();
                 let micros = match player.position().await {
-                    Ok(micros) => micros,
+                    Ok(micros) => {
+                        unanswered = 0;
+                        micros
+                    }
                     Err(error) => {
-                        tracing::debug!(%error, "Position is not readable");
+                        unanswered += 1;
+                        tracing::debug!(%error, unanswered, "Position is not readable");
+                        if unanswered >= GONE_AFTER {
+                            break;
+                        }
                         continue;
                     }
                 };
@@ -251,6 +263,6 @@ pub async fn follow(
         }
     }
 
-    tracing::info!(player = short_name(name), "player left the bus");
+    tracing::info!(player = short_name(name), "the signal stream ended");
     Ok(())
 }

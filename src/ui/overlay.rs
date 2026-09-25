@@ -73,6 +73,7 @@ fn style(settings: &Settings) -> String {
              border: 2px dashed rgba(255, 255, 255, 0.75);
              border-radius: 14px;
          }}
+         window.{OVERLAY} .pixel {{ background: rgba(0, 0, 0, 0.01); }}
          window.{OVERLAY} label {{
              color: {color};
              font-size: {size}px;
@@ -276,11 +277,31 @@ impl Overlay {
         lines.add_css_class("lines");
         lines.append(&viewport);
 
+        // The strip goes away with the words, and something has to stay
+        // behind it: a window with nothing left to draw sends no new frame,
+        // and the compositor goes on showing the last one — the line stayed on
+        // screen long after the program had stopped drawing it. One pixel,
+        // almost but not quite invisible, is enough to keep the frames coming.
+        let pixel = gtk::Box::builder()
+            .width_request(1)
+            .height_request(1)
+            .halign(gtk::Align::Center)
+            .build();
+        pixel.add_css_class("pixel");
+
+        let stack = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .halign(gtk::Align::Center)
+            .valign(gtk::Align::End)
+            .build();
+        stack.append(&lines);
+        stack.append(&pixel);
+
         let window = ApplicationWindow::builder()
             .application(app)
             .default_width(900)
             .default_height(220)
-            .child(&lines)
+            .child(&stack)
             .build();
         window.add_css_class(OVERLAY);
 
