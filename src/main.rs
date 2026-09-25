@@ -44,9 +44,9 @@ const COMMANDS: [(&str, &str); 4] = [
 ];
 
 fn main() -> glib::ExitCode {
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+    // The copy that holds the terminal is the one that prints to it; the one
+    // that was let go of writes to a file nobody has to be watching.
+    lyricslens::log::start(lyricslens::cli::holds_terminal());
 
     if let Some(code) = lyricslens::cli::handle() {
         return glib::ExitCode::from(code);
