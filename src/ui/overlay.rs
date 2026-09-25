@@ -203,6 +203,9 @@ pub struct Overlay {
     rows: Vec<Row>,
     provider: CssProvider,
     motion: Rc<RefCell<Motion>>,
+    /// True while the person has asked for it to be out of the way, which
+    /// outranks having something to show.
+    hidden: Rc<Cell<bool>>,
     /// How far through the line being sung the song is, as of the last tick.
     /// The slide reads it so the line climbing into place arrives already lit
     /// as far as it should be.
@@ -276,6 +279,17 @@ impl Overlay {
         lines.add_css_class("lines");
         lines.append(&viewport);
 
+        // Always something to draw. A window whose content goes away entirely
+        // sends no new frame, and the compositor keeps showing the last one —
+        // the line stayed on screen long after the program had stopped drawing
+        // it. One transparent pixel is enough to keep the frames coming.
+        let pixel = gtk::Box::builder()
+            .width_request(1)
+            .height_request(1)
+            .opacity(0.0)
+            .build();
+        lines.append(&pixel);
+
         let window = ApplicationWindow::builder()
             .application(app)
             .default_width(900)
@@ -310,6 +324,7 @@ impl Overlay {
             column,
             rows,
             provider,
+            hidden: Rc::new(Cell::new(false)),
             progress: Rc::new(Cell::new(0.0)),
             motion: Rc::new(RefCell::new(Motion {
                 shown: vec![String::new(); ROWS],
@@ -385,7 +400,21 @@ impl Overlay {
 
         // Shown first: a hidden widget measures as nothing, and `fit` would
         // size the window onto the column to a single pixel.
-        self.lines.set_visible(!wanted[0].is_empty());
+        // Faded out rather than hidden. A window whose only child is hidden
+        // has nothing left to draw, so GTK sends no new frame and the
+        // compositor keeps showing the last one — the line stayed on screen
+        // long after the program had stopped drawing it. Opacity always
+        // redraws.
+        let anything = !wanted[0].is_empty() && !self.hidden.get();
+        self.lines.set_visible(true);
+        self.viewport.set_visible(anything);
+        // The strip is part of the line; with no words it is a dark bar for
+        // nothing.
+        if anything {
+            self.lines.add_css_class("lines");
+        } else {
+            self.lines.remove_css_class("lines");
+        }
         self.fit();
         self.motion.borrow_mut().shown = wanted.to_vec();
     }
@@ -505,18 +534,27 @@ impl Overlay {
     /// Brings the overlay back to the screen, which is what a second launch
     /// of the program should do instead of drawing another one.
     pub fn present(&self) {
+        self.hidden.set(false);
         self.window.set_visible(true);
         self.window.present();
+        self.lines.set_opacity(if self.rows[0].text().is_empty() {
+            0.0
+        } else {
+            1.0
+        });
         self.set_click_through(!self.placement.borrow().positioning);
     }
 
     /// Hides the overlay, or brings it back.
     pub fn toggle(&self) {
-        let visible = self.window.is_visible();
-        self.window.set_visible(!visible);
-        if !visible {
-            self.set_click_through(!self.placement.borrow().positioning);
-        }
+        let hidden = !self.hidden.get();
+        self.hidden.set(hidden);
+        self.lines
+            .set_opacity(if hidden || self.rows[0].text().is_empty() {
+                0.0
+            } else {
+                1.0
+            });
     }
 
     /// Enters or leaves the mode where the overlay can be dragged.
