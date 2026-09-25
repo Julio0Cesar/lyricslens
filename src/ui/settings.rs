@@ -183,6 +183,21 @@ pub fn open(app: &adw::Application) {
     });
     look.add(&karaoke);
 
+    let paused = adw::SwitchRow::builder()
+        .title("Hide while paused")
+        .subtitle("Lyrics on screen with nothing playing is the most confusing thing it can do")
+        .active(settings.borrow().hide_when_paused)
+        .build();
+    paused.connect_active_notify({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            settings.borrow_mut().hide_when_paused = row.is_active();
+            save(&settings.borrow(), &app);
+        }
+    });
+    look.add(&paused);
+
     let timing = adw::PreferencesGroup::builder()
         .title("Timing")
         .description("Positive holds the lyrics back, negative brings them forward.")
