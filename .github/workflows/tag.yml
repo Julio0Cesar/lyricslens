@@ -69,8 +69,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Cargo.toml Cargo.lock packaging/PKGBUILD
-          git commit -m "release $next"
-          git push origin HEAD:main
+          # The files can already hold the number — someone wrote it by hand,
+          # or a run before this one got as far as writing it. Nothing to
+          # commit is not a failure; only a missing tag is.
+          if ! git diff --cached --quiet; then
+            git commit -m "release $next"
+            git push origin HEAD:main
+          fi
 
           git tag -a "v$next" -m "LyricsLens v$next"
           git push origin "v$next"
