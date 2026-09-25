@@ -110,6 +110,14 @@ impl Client {
         Ok(None)
     }
 
+    /// Whether a release newer than this build is out.
+    ///
+    /// The client is here because it is the one thing in the program that
+    /// already knows how to reach the network and says who it is.
+    pub async fn check_for_a_newer_release(&self) -> Option<String> {
+        crate::update::newer_than_this(&self.http).await
+    }
+
     /// Every recording under a name, for choosing by hand when the automatic
     /// match lands on the wrong one.
     ///

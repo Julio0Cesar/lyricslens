@@ -30,6 +30,8 @@ pub struct Search {
     pub playing: Rc<RefCell<Track>>,
     /// What became of the automatic search for the track playing now.
     pub report: Rc<RefCell<String>>,
+    /// A release newer than this one, when there is one.
+    pub newer: Rc<RefCell<Option<String>>>,
 }
 
 /// Opens the preferences window, saving each change as it is made.
@@ -472,6 +474,26 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
         }
     });
     start.add(&session);
+
+    if let Some(version) = search
+        .as_ref()
+        .and_then(|search| search.newer.borrow().clone())
+    {
+        let news = Section::new(
+            "A newer version is out",
+            &format!(
+                "You are running {}. {version} is available.",
+                env!("CARGO_PKG_VERSION")
+            ),
+        );
+        let how = adw::ActionRow::builder()
+            .title("lyricslens --upgrade")
+            .subtitle("Installs it over this one. Nothing happens until you run it")
+            .build();
+        news.add(&how);
+        page.add(&divider());
+        page.add(&news.group);
+    }
 
     let close = Section::new("Closing", "");
     let quit = adw::ActionRow::builder()
