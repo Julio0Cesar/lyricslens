@@ -11,9 +11,9 @@ use tokio::task::JoinHandle;
 use zbus::Connection;
 
 use crate::error::Error;
-use crate::lyrics::Lyrics;
-use crate::lyrics::lrclib::Client;
+use crate::lyrics::lrclib::{Candidate, Client};
 use crate::lyrics::normalize::{Query, from_track};
+use crate::lyrics::{Lyrics, lrc};
 use crate::media::{Event, Track, mpris};
 use crate::store::{cache, settings::Settings};
 
@@ -22,6 +22,18 @@ const RETRY: Duration = Duration::from_secs(2);
 
 /// Names the player to follow, over whatever the settings say.
 const OVERRIDE: &str = "LYRICSLENS_PLAYER";
+
+/// What the interface asks the worker to do.
+///
+/// Only the worker has a runtime to reach the network with, so a search
+/// started from the preferences window is a message rather than a call.
+#[derive(Debug, Clone)]
+pub enum Request {
+    /// Every recording under this name, for choosing by hand.
+    Search { artist: String, title: String },
+    /// Use these lyrics for the track playing now, and remember the choice.
+    Choose(Box<Candidate>),
+}
 
 /// Everything the interface needs to know.
 #[derive(Debug, Clone)]
@@ -35,14 +47,22 @@ pub enum Update {
     /// Boxed because it dwarfs every other variant, and a whole song would
     /// otherwise set the size of the channel's every message.
     Lyrics(Box<Option<Lyrics>>),
+    /// The answer to a search, in the order the service returned it.
+    Candidates(Vec<Candidate>),
 }
 
 /// Starts the worker and hands back the receiving end.
 ///
 /// The channel is bounded: if the interface ever stops reading, the worker
 /// waits instead of growing a queue of stale updates.
-pub fn start(settings: Settings) -> async_channel::Receiver<Update> {
+pub fn start(
+    settings: Settings,
+) -> (
+    async_channel::Receiver<Update>,
+    async_channel::Sender<Request>,
+) {
     let (sender, receiver) = async_channel::bounded(64);
+    let (requests, incoming) = async_channel::bounded(8);
 
     std::thread::Builder::new()
         .name("player".to_owned())
@@ -57,15 +77,19 @@ pub fn start(settings: Settings) -> async_channel::Receiver<Update> {
                     return;
                 }
             };
-            runtime.block_on(run(sender, settings));
+            runtime.block_on(run(sender, incoming, settings));
         })
         .expect("spawning a thread");
 
-    receiver
+    (receiver, requests)
 }
 
 /// Follows whatever is playing, and keeps looking when nothing is.
-async fn run(updates: async_channel::Sender<Update>, settings: Settings) {
+async fn run(
+    updates: async_channel::Sender<Update>,
+    requests: async_channel::Receiver<Request>,
+    settings: Settings,
+) {
     // The variable wins over the file: it is how a single run is pointed at a
     // different player without editing anything.
     let wanted = std::env::var(OVERRIDE)
@@ -77,14 +101,18 @@ async fn run(updates: async_channel::Sender<Update>, settings: Settings) {
         if updates.is_closed() {
             return;
         }
-        if let Err(error) = once(&updates, wanted.as_deref()).await {
+        if let Err(error) = once(&updates, &requests, wanted.as_deref()).await {
             tracing::warn!(%error, "lost the player");
         }
         tokio::time::sleep(RETRY).await;
     }
 }
 
-async fn once(updates: &async_channel::Sender<Update>, wanted: Option<&str>) -> Result<(), Error> {
+async fn once(
+    updates: &async_channel::Sender<Update>,
+    requests: &async_channel::Receiver<Request>,
+    wanted: Option<&str>,
+) -> Result<(), Error> {
     let connection = Connection::session().await?;
     let Some(name) = mpris::pick(&connection, wanted).await? else {
         tracing::debug!("no MPRIS player on the bus");
@@ -111,9 +139,27 @@ async fn once(updates: &async_channel::Sender<Update>, wanted: Option<&str>) -> 
 
     let client = Client::new()?;
     let mut lookup: Option<JoinHandle<()>> = None;
+    let mut playing: Option<Track> = None;
 
-    while let Ok(event) = incoming.recv().await {
+    loop {
+        let event = tokio::select! {
+            event = incoming.recv() => match event {
+                Ok(event) => event,
+                Err(_) => break,
+            },
+            request = requests.recv() => {
+                match request {
+                    Ok(request) => {
+                        answer(&client, request, playing.clone(), updates).await;
+                        continue;
+                    }
+                    Err(_) => break,
+                }
+            }
+        };
+
         if let Event::TrackChanged(track) = &event {
+            playing = Some(track.clone());
             // A lookup for the previous song is worthless now, and its answer
             // arriving late would put the wrong lyrics on screen.
             if let Some(lookup) = lookup.take() {
@@ -141,6 +187,44 @@ async fn once(updates: &async_channel::Sender<Update>, wanted: Option<&str>) -> 
         .send(Update::Media(Event::TrackChanged(Track::default())))
         .await;
     Ok(())
+}
+
+/// Handles what the preferences window asked for.
+async fn answer(
+    client: &Client,
+    request: Request,
+    playing: Option<Track>,
+    updates: &async_channel::Sender<Update>,
+) {
+    match request {
+        Request::Search { artist, title } => {
+            let found = match client.search(&artist, &title).await {
+                Ok(found) => found,
+                Err(error) => {
+                    tracing::warn!(%error, "the search failed");
+                    Vec::new()
+                }
+            };
+            tracing::info!(results = found.len(), artist, title, "searched by hand");
+            let _ = updates.send(Update::Candidates(found)).await;
+        }
+        Request::Choose(chosen) => {
+            let lyrics = lrc::parse(&chosen.lrc);
+            // Cached under what is playing, not under what was searched for:
+            // the point is that the same track comes back right next time.
+            if let Some(track) = playing {
+                let query = from_track(&track);
+                cache::put(
+                    query.artist.as_deref().unwrap_or_default(),
+                    &query.title,
+                    track.length,
+                    &chosen.lrc,
+                );
+            }
+            tracing::info!(lines = lyrics.lines.len(), "lyrics chosen by hand");
+            let _ = updates.send(Update::Lyrics(Box::new(Some(lyrics)))).await;
+        }
+    }
 }
 
 async fn fetch(client: Client, track: Track, updates: async_channel::Sender<Update>) {

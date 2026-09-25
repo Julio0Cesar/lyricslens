@@ -26,6 +26,16 @@ const AGENT: &str = concat!(
 /// How far a search result's duration may sit from the one being played.
 const TOLERANCE: Duration = Duration::from_secs(4);
 
+/// One recording the service knows about, as a person would judge it.
+#[derive(Debug, Clone)]
+pub struct Candidate {
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub length: Option<Duration>,
+    pub lrc: String,
+}
+
 /// Lyrics as they came, with the text they were parsed from. The raw LRC is
 /// what goes to the cache: it survives a change to the parser.
 #[derive(Debug, Clone)]
@@ -48,6 +58,8 @@ struct Record {
     track_name: String,
     #[serde(default)]
     artist_name: String,
+    #[serde(default)]
+    album_name: String,
     #[serde(default)]
     duration: Option<f64>,
     #[serde(default)]
@@ -96,6 +108,44 @@ impl Client {
         }
 
         Ok(None)
+    }
+
+    /// Every recording under a name, for choosing by hand when the automatic
+    /// match lands on the wrong one.
+    ///
+    /// Only the ones with synced lyrics: a result that cannot be followed is
+    /// not worth a row in a list.
+    pub async fn search(&self, artist: &str, title: &str) -> Result<Vec<Candidate>, Error> {
+        let mut params = vec![("track_name", title.to_owned())];
+        if !artist.trim().is_empty() {
+            params.push(("artist_name", artist.trim().to_owned()));
+        }
+
+        let response = self
+            .http
+            .get(format!("{}/api/search", self.base))
+            .query(&params)
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            tracing::debug!(status = %response.status(), "the search found nothing");
+            return Ok(Vec::new());
+        }
+
+        let records: Vec<Record> = response.json().await?;
+        Ok(records
+            .into_iter()
+            .filter_map(|record| {
+                let found = synced(&record)?;
+                Some(Candidate {
+                    title: record.track_name,
+                    artist: record.artist_name,
+                    album: record.album_name,
+                    length: record.duration.map(Duration::from_secs_f64),
+                    lrc: found.lrc,
+                })
+            })
+            .collect())
     }
 
     async fn exact(
@@ -222,6 +272,7 @@ mod tests {
         Record {
             track_name: name.to_owned(),
             artist_name: "Someone".to_owned(),
+            album_name: String::new(),
             duration: Some(seconds),
             instrumental: false,
             synced_lyrics: lyrics.map(str::to_owned),

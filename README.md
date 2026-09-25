@@ -126,6 +126,13 @@ the overlay straight away.
 The same window has the switch that lets you drag the overlay, and the screen
 it lives on.
 
+### When the words are wrong
+
+Open the preferences and look under *Lyrics for this track*. The artist and
+title come filled in from what is playing; correct them, search, and pick from
+everything the service has under that name. The choice is kept for that
+recording, so the song comes back right next time.
+
 ## What it needs from a player
 
 LyricsLens follows the position the player reports, and some players report

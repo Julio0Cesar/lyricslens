@@ -77,3 +77,23 @@ async fn whatever_is_playing_goes_through_the_whole_chain() {
         Err(error) => eprintln!("the service refused: {error}"),
     }
 }
+
+/// The list the preferences window shows when the automatic match is wrong.
+#[tokio::test]
+#[ignore = "needs the network"]
+async fn a_search_by_hand_comes_back_with_choices() {
+    let found = Client::new()
+        .expect("a client")
+        .search("Radiohead", "Creep")
+        .await
+        .expect("the service answered");
+
+    assert!(found.len() > 1, "got {} results", found.len());
+    assert!(found.iter().all(|candidate| !candidate.lrc.is_empty()));
+    for candidate in found.iter().take(3) {
+        eprintln!(
+            "{} — {} ({:?})",
+            candidate.artist, candidate.title, candidate.length
+        );
+    }
+}

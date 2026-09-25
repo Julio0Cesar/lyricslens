@@ -77,7 +77,7 @@ fn main() -> glib::ExitCode {
     }
 
     let settings = Settings::load();
-    let updates = app::start(settings.clone());
+    let (updates, requests) = app::start(settings.clone());
 
     // GTK calls this again every time the program is launched while one copy
     // is already running. Building a second overlay there would stack another
@@ -100,7 +100,20 @@ fn main() -> glib::ExitCode {
 
         let overlay = Rc::new(overlay);
         *running.borrow_mut() = Some(Rc::clone(&overlay));
-        add_commands(application, &overlay);
+
+        let state = Rc::new(RefCell::new(State::new(settings.clone())));
+
+        // What the preferences window needs to search for the track playing
+        // now, and where the answers land while it is open.
+        let playing: Rc<RefCell<Track>> = Rc::new(RefCell::new(Track::default()));
+        let (found, candidates) = async_channel::bounded(4);
+        let search = preferences::Search {
+            requests: requests.clone(),
+            candidates,
+            playing: Rc::clone(&playing),
+        };
+
+        add_commands(application, &overlay, &search);
 
         // The icon in the status bar is the only handle a program with no
         // window of its own gives the person running it.
@@ -108,19 +121,21 @@ fn main() -> glib::ExitCode {
         glib::spawn_future_local({
             let application = application.clone();
             let overlay = Rc::clone(&overlay);
+            let search = search.clone();
             async move {
                 while let Ok(command) = commands.recv().await {
                     match command {
                         tray::Command::Toggle => overlay.toggle(),
                         tray::Command::Position => overlay.toggle_positioning(),
-                        tray::Command::Settings => preferences::open(&application),
+                        tray::Command::Settings => {
+                            preferences::show(&application, Some(search.clone()));
+                        }
                         tray::Command::Quit => application.quit(),
                     }
                 }
             }
         });
 
-        let state = Rc::new(RefCell::new(State::new(settings.clone())));
         // The preferences window writes the file and asks for this: both the
         // window and what decides its contents have to read it again.
         let reload = gio::SimpleAction::new("reload", None);
@@ -137,9 +152,22 @@ fn main() -> glib::ExitCode {
 
         let updates = updates.clone();
         let reader = Rc::clone(&state);
+        let seen = Rc::clone(&playing);
         glib::spawn_future_local(async move {
             while let Ok(update) = updates.recv().await {
-                reader.borrow_mut().apply(update);
+                match update {
+                    // The window that asked for these is the only one that
+                    // wants them; the state has no use for a search.
+                    app::Update::Candidates(results) => {
+                        let _ = found.send(results).await;
+                    }
+                    update => {
+                        if let app::Update::Media(Event::TrackChanged(track)) = &update {
+                            *seen.borrow_mut() = track.clone();
+                        }
+                        reader.borrow_mut().apply(update);
+                    }
+                }
             }
         });
 
@@ -187,7 +215,11 @@ fn running_elsewhere() -> bool {
     probe.register(gio::Cancellable::NONE).is_ok() && probe.is_remote()
 }
 
-fn add_commands(application: &adw::Application, overlay: &Rc<Overlay>) {
+fn add_commands(
+    application: &adw::Application,
+    overlay: &Rc<Overlay>,
+    search: &preferences::Search,
+) {
     let present = gio::SimpleAction::new("present", None);
     present.connect_activate({
         let overlay = Rc::clone(overlay);
@@ -197,7 +229,8 @@ fn add_commands(application: &adw::Application, overlay: &Rc<Overlay>) {
     let settings = gio::SimpleAction::new("settings", None);
     settings.connect_activate({
         let application = application.clone();
-        move |_, _| preferences::open(&application)
+        let search = search.clone();
+        move |_, _| preferences::show(&application, Some(search.clone()))
     });
 
     let quit = gio::SimpleAction::new("quit", None);
@@ -279,6 +312,9 @@ impl State {
                 self.clock.sample(reading, at);
             }
             Update::Media(Event::PositionStalled) => self.stalled = true,
+            // Answered straight to the window that asked; nothing here wants
+            // a list of recordings.
+            Update::Candidates(_) => {}
         }
     }
 
