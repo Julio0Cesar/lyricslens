@@ -90,6 +90,7 @@ use `lyricslens --quit` or the preferences window.
 | `lyricslens --toggle` | hides the overlay, or brings it back |
 | `lyricslens --position` | enters the mode where you drag it somewhere else |
 | `lyricslens --upgrade` | installs the newest release over this one |
+| | the preferences window says when there is one, once a day at most |
 | `lyricslens --uninstall` | removes it from `~/.local` |
 | `lyricslens --paths` | prints where the settings and the cached lyrics live |
 | `lyricslens --quit` | closes the overlay that is running |

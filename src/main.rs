@@ -109,9 +109,11 @@ fn main() -> glib::ExitCode {
         *running.borrow_mut() = Some(Rc::clone(&overlay));
 
         let report = Rc::new(RefCell::new(String::new()));
+        let newer = Rc::new(RefCell::new(None));
         let state = Rc::new(RefCell::new(State::new(
             settings.clone(),
             Rc::clone(&report),
+            Rc::clone(&newer),
         )));
 
         // What the preferences window needs to search for the track playing
@@ -123,6 +125,7 @@ fn main() -> glib::ExitCode {
             candidates,
             playing: Rc::clone(&playing),
             report: Rc::clone(&report),
+            newer: Rc::clone(&newer),
         };
 
         add_commands(application, &overlay, &search);
@@ -301,6 +304,8 @@ struct State {
     since: Instant,
     /// What the preferences window says about the lyrics for this track.
     report: Rc<RefCell<String>>,
+    /// A release newer than this one, once it is known.
+    newer: Rc<RefCell<Option<String>>>,
     playing: bool,
     stalled: bool,
     /// True between a track change and the answer about its lyrics, so the
@@ -309,11 +314,16 @@ struct State {
 }
 
 impl State {
-    fn new(settings: Settings, report: Rc<RefCell<String>>) -> Self {
+    fn new(
+        settings: Settings,
+        report: Rc<RefCell<String>>,
+        newer: Rc<RefCell<Option<String>>>,
+    ) -> Self {
         Self {
             settings,
             since: Instant::now(),
             report,
+            newer,
             track: Track::default(),
             lyrics: None,
             clock: Clock::new(0),
@@ -364,6 +374,9 @@ impl State {
             // Answered straight to the window that asked; nothing here wants
             // a list of recordings.
             Update::Candidates(_) => {}
+            Update::NewVersion(version) => {
+                *self.newer.borrow_mut() = Some(version);
+            }
         }
     }
 

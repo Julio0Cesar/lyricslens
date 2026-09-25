@@ -49,6 +49,8 @@ pub enum Update {
     Lyrics(Box<Option<Lyrics>>),
     /// The answer to a search, in the order the service returned it.
     Candidates(Vec<Candidate>),
+    /// A release newer than this build exists. Nothing is installed by it.
+    NewVersion(String),
 }
 
 /// Starts the worker and hands back the receiving end.
@@ -90,6 +92,16 @@ async fn run(
     requests: async_channel::Receiver<Request>,
     settings: Settings,
 ) {
+    if let Ok(client) = Client::new() {
+        let updates = updates.clone();
+        tokio::spawn(async move {
+            if let Some(version) = client.check_for_a_newer_release().await {
+                tracing::info!(version, "a newer release is out");
+                let _ = updates.send(Update::NewVersion(version)).await;
+            }
+        });
+    }
+
     // The variable wins over the file: it is how a single run is pointed at a
     // different player without editing anything.
     let wanted = std::env::var(OVERRIDE)
