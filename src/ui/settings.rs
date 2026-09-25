@@ -27,6 +27,8 @@ pub struct Search {
     pub requests: async_channel::Sender<Request>,
     pub candidates: async_channel::Receiver<Vec<Candidate>>,
     pub playing: Rc<RefCell<Track>>,
+    /// What became of the automatic search for the track playing now.
+    pub report: Rc<RefCell<String>>,
 }
 
 /// Opens the preferences window, saving each change as it is made.
@@ -399,6 +401,13 @@ fn lyrics_group(search: &Search) -> Section {
         .text(query.title)
         .build();
 
+    let found_state = gtk::Label::builder()
+        .halign(gtk::Align::Start)
+        .margin_top(2)
+        .margin_bottom(6)
+        .build();
+    found_state.add_css_class("dim-label");
+
     let results = gtk::ListBox::builder()
         .selection_mode(gtk::SelectionMode::None)
         .visible(false)
@@ -461,6 +470,7 @@ fn lyrics_group(search: &Search) -> Section {
         }
     });
 
+    group.add(&found_state);
     group.add(&artist);
     group.add(&title);
     group.add(&button);
@@ -477,11 +487,14 @@ fn lyrics_group(search: &Search) -> Section {
         let title = title.clone();
         let results = results.clone();
         let status = status.clone();
+        let found_state = found_state.clone();
         move || {
             // The window was closed; nothing left to keep in step.
             if artist.root().is_none() {
                 return glib::ControlFlow::Break;
             }
+
+            found_state.set_label(&search.report.borrow().clone());
 
             let playing = search.playing.borrow().clone();
             if playing == showing {

@@ -24,6 +24,13 @@ const TICK: Duration = Duration::from_millis(100);
 
 const ID: &str = "io.github.julio0cesar.lyricslens";
 
+/// How long the overlay is allowed to explain itself before going quiet.
+///
+/// A message about the search is worth a moment and no more: past that, an
+/// overlay saying it is still looking is just words on the screen with no
+/// song under them. The preferences window keeps the answer.
+const GRACE: Duration = Duration::from_secs(4);
+
 /// What the running overlay can be told to do from outside.
 ///
 /// Wayland gives an ordinary client no way to grab a key combination, so the
@@ -101,7 +108,11 @@ fn main() -> glib::ExitCode {
         let overlay = Rc::new(overlay);
         *running.borrow_mut() = Some(Rc::clone(&overlay));
 
-        let state = Rc::new(RefCell::new(State::new(settings.clone())));
+        let report = Rc::new(RefCell::new(String::new()));
+        let state = Rc::new(RefCell::new(State::new(
+            settings.clone(),
+            Rc::clone(&report),
+        )));
 
         // What the preferences window needs to search for the track playing
         // now, and where the answers land while it is open.
@@ -111,6 +122,7 @@ fn main() -> glib::ExitCode {
             requests: requests.clone(),
             candidates,
             playing: Rc::clone(&playing),
+            report: Rc::clone(&report),
         };
 
         add_commands(application, &overlay, &search);
@@ -264,6 +276,11 @@ struct State {
     track: Track,
     lyrics: Option<Lyrics>,
     clock: Clock,
+    /// When the track changed, which is when a message about it stops being
+    /// news.
+    since: Instant,
+    /// What the preferences window says about the lyrics for this track.
+    report: Rc<RefCell<String>>,
     playing: bool,
     stalled: bool,
     /// True between a track change and the answer about its lyrics, so the
@@ -272,9 +289,11 @@ struct State {
 }
 
 impl State {
-    fn new(settings: Settings) -> Self {
+    fn new(settings: Settings, report: Rc<RefCell<String>>) -> Self {
         Self {
             settings,
+            since: Instant::now(),
+            report,
             track: Track::default(),
             lyrics: None,
             clock: Clock::new(0),
@@ -289,6 +308,10 @@ impl State {
             Update::Lyrics(lyrics) => {
                 self.lyrics = *lyrics;
                 self.searching = false;
+                *self.report.borrow_mut() = match &self.lyrics {
+                    Some(lyrics) => format!("Following {} lines.", lyrics.lines.len()),
+                    None => "No synced lyrics found for this one.".to_owned(),
+                };
             }
             Update::Player(name) => self.clock.set_offset_ms(self.settings.offset_ms(&name)),
             Update::Media(Event::TrackChanged(track)) => {
@@ -298,6 +321,12 @@ impl State {
                     self.playing = false;
                 }
                 self.searching = !track.is_empty();
+                self.since = Instant::now();
+                *self.report.borrow_mut() = if self.searching {
+                    "Looking…".to_owned()
+                } else {
+                    String::new()
+                };
                 self.track = track;
                 self.lyrics = None;
                 self.stalled = false;
@@ -360,10 +389,23 @@ impl State {
                 .map(str::to_owned);
         }
 
+        // A player that reports no position is a standing fact, not news: it
+        // will not change while this song plays, and nothing will ever appear.
+        if self.stalled {
+            let title = self.track.title.as_deref().unwrap_or("unknown track");
+            return Some(format!(
+                "{title}  ·  this player does not report its position"
+            ));
+        }
+
+        // Everything else is news, and news goes quiet. The preferences window
+        // is where the answer lives from then on.
+        if self.since.elapsed() >= GRACE {
+            return None;
+        }
+
         let title = self.track.title.as_deref().unwrap_or("unknown track");
-        let reason = if self.stalled {
-            "this player does not report its position"
-        } else if self.searching {
+        let reason = if self.searching {
             "looking for the lyrics…"
         } else if self.lyrics.is_none() {
             "no synced lyrics for this one"
