@@ -1,19 +1,32 @@
 name: Tag
 
-# A merge that raises the version in Cargo.toml is a release. Without this the
-# version sits on main and `lyricslens --upgrade` keeps finding the old one,
-# because upgrading downloads the latest release, not the latest commit.
+# Every merge that changes the program is a release.
+#
+# The version used to be typed by hand in Cargo.toml, and two pull requests
+# raising the same line meant one of the two bumps was thrown away by the
+# merge — and with it the release. Nothing here is typed: the number comes from
+# the last tag.
 on:
   push:
     branches: [main]
-    paths: ["Cargo.toml"]
+    paths:
+      - "src/**"
+      - "examples/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "install.sh"
+      - "packaging/**"
+      - ".github/workflows/release.yml"
 
 permissions:
   contents: write
 
 jobs:
   tag:
-    name: Tag the version on main
+    name: Tag the next version
+    # The step below commits, which lands here again. Anything the bot wrote is
+    # already released.
+    if: github.event.head_commit.author.name != 'github-actions[bot]'
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
@@ -22,29 +35,49 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Tag, unless that version is already out
+      - name: Work out the version, write it down and tag it
         id: tag
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
-          tag="v$version"
+          latest=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+          latest=${latest#v}
+          latest=${latest:-0.0.0}
 
-          if git rev-parse "$tag" >/dev/null 2>&1; then
-            echo "$tag already exists; nothing to do"
-            exit 0
+          major=${latest%%.*}
+          rest=${latest#*.}
+          minor=${rest%%.*}
+          patch=${rest#*.}
+
+          # A bigger number already in Cargo.toml is deliberate — someone meant
+          # this to be a feature or a break. Anything else is the next patch.
+          wanted=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          next="$major.$minor.$((patch + 1))"
+          if [ "$(printf '%s\n%s\n' "$latest" "$wanted" | sort -V | tail -n 1)" = "$wanted" ] \
+             && [ "$wanted" != "$latest" ]; then
+            next="$wanted"
           fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+          sed -i "0,/^version = \".*\"/s//version = \"$next\"/" Cargo.toml
+          sed -i "s/^pkgver=.*/pkgver=$next/" packaging/PKGBUILD
+          # Cargo.lock carries the version too, and a stale one fails the
+          # --locked build the release does.
+          awk -v v="$next" '
+            /^name = "lyricslens"$/ { found = 1 }
+            found && /^version = / { sub(/".*"/, "\"" v "\""); found = 0 }
+            { print }
+          ' Cargo.lock > Cargo.lock.next && mv Cargo.lock.next Cargo.lock
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # The tag only. The release is published by the build below, with
-          # its files attached — a release that exists without them is one
-          # `--upgrade` downloads a 404 from.
-          git tag -a "$tag" -m "LyricsLens $tag"
-          git push origin "$tag"
+          git add Cargo.toml Cargo.lock packaging/PKGBUILD
+          git commit -m "release $next"
+          git push origin HEAD:main
 
-  # The tag above cannot start this by itself, so it is called here.
+          git tag -a "v$next" -m "LyricsLens v$next"
+          git push origin "v$next"
+          echo "tag=v$next" >> "$GITHUB_OUTPUT"
+
+  # A tag pushed by a workflow starts nothing — GitHub refuses, to keep
+  # workflows from triggering each other forever. So the build is called.
   release:
     name: Build the release
     needs: tag
