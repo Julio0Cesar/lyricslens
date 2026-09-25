@@ -313,58 +313,31 @@ fn save(settings: &Settings, app: &adw::Application) {
 
 /// A heading with a chevron, and the rows it hides.
 ///
-/// libadwaita collapses a row, not a whole group, so the rows live in a
-/// revealer under a heading that toggles it.
+/// `adw::ExpanderRow` rather than a revealer of our own: a revealer draws the
+/// rows on their way out past its edge, and they leave pieces of themselves
+/// scattered between the sections.
 #[derive(Clone)]
 struct Section {
     group: adw::PreferencesGroup,
-    rows: gtk::ListBox,
+    expander: adw::ExpanderRow,
 }
 
 impl Section {
     fn new(title: &str, description: &str) -> Self {
-        let rows = gtk::ListBox::builder()
-            .selection_mode(gtk::SelectionMode::None)
-            .build();
-        rows.add_css_class("boxed-list");
-
-        let revealer = gtk::Revealer::builder()
-            .child(&rows)
-            .reveal_child(true)
-            .transition_type(gtk::RevealerTransitionType::SlideDown)
-            .build();
-
-        let chevron = gtk::Button::builder()
-            .icon_name("pan-up-symbolic")
-            .valign(gtk::Align::Center)
-            .tooltip_text("Show or hide")
-            .build();
-        chevron.add_css_class("flat");
-        chevron.connect_clicked({
-            let revealer = revealer.clone();
-            move |chevron| {
-                let open = !revealer.reveals_child();
-                revealer.set_reveal_child(open);
-                chevron.set_icon_name(if open {
-                    "pan-up-symbolic"
-                } else {
-                    "pan-down-symbolic"
-                });
-            }
-        });
-
-        let group = adw::PreferencesGroup::builder()
+        let expander = adw::ExpanderRow::builder()
             .title(title)
-            .description(description)
-            .header_suffix(&chevron)
+            .subtitle(description)
+            .expanded(true)
             .build();
-        group.add(&revealer);
 
-        Self { group, rows }
+        let group = adw::PreferencesGroup::new();
+        group.add(&expander);
+
+        Self { group, expander }
     }
 
     fn add(&self, row: &impl IsA<gtk::Widget>) {
-        self.rows.append(row);
+        self.expander.add_row(row);
     }
 }
 
