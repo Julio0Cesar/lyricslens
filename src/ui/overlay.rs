@@ -204,6 +204,9 @@ pub struct Overlay {
     rows: Vec<Row>,
     provider: CssProvider,
     motion: Rc<RefCell<Motion>>,
+    /// Which row is the one being sung. One when the line before it is shown,
+    /// zero when it is not.
+    highlighted: Rc<Cell<usize>>,
     /// How far through the line being sung the song is, as of the last tick.
     /// The slide reads it so the line climbing into place arrives already lit
     /// as far as it should be.
@@ -331,6 +334,7 @@ impl Overlay {
             column,
             rows,
             provider,
+            highlighted: Rc::new(Cell::new(0)),
             progress: Rc::new(Cell::new(0.0)),
             motion: Rc::new(RefCell::new(Motion {
                 shown: vec![String::new(); ROWS],
@@ -359,10 +363,18 @@ impl Overlay {
     /// Called on every tick. Nothing happens unless something changed; when
     /// the line does change, the column slides by one row rather than swapping
     /// its contents where they stand.
-    pub fn show(&self, current: Option<&str>, upcoming: &[String]) {
-        let mut wanted = vec![current.unwrap_or_default().to_owned()];
-        wanted.extend(upcoming.iter().take(ROWS - 1).cloned());
+    pub fn show(&self, before: Option<&str>, current: Option<&str>, upcoming: &[String]) {
+        // The line before comes first, when it is shown at all, and the one
+        // being sung moves down a place to make room for it.
+        let lead = usize::from(before.is_some() && current.is_some());
+        let mut wanted: Vec<String> = Vec::with_capacity(ROWS);
+        if lead == 1 {
+            wanted.push(before.unwrap_or_default().to_owned());
+        }
+        wanted.push(current.unwrap_or_default().to_owned());
+        wanted.extend(upcoming.iter().take(ROWS - 1 - lead).cloned());
         wanted.resize(ROWS, String::new());
+        self.highlighted.set(lead);
 
         let (changed, moved, running) = {
             let mut motion = self.motion.borrow_mut();
@@ -370,14 +382,15 @@ impl Overlay {
             motion.wanted = wanted.clone();
             // The line moved on only if what is being sung now is the line
             // that was waiting directly underneath.
-            let moved = motion.shown[0] != wanted[0];
+            let moved = motion.shown.get(lead) != wanted.get(lead);
             (changed, moved, motion.running)
         };
 
         if !changed || running {
             return;
         }
-        if moved && !self.rows[1].text().is_empty() && self.rows[1].text() == wanted[0] {
+        let arriving = self.rows.get(lead + 1).map(Row::text).unwrap_or_default();
+        if moved && !arriving.is_empty() && arriving == wanted[lead] {
             self.motion.borrow_mut().running = true;
             self.slide();
             return;
@@ -394,19 +407,21 @@ impl Overlay {
     fn settle(&self, wanted: &[String]) {
         let waiting = usize::from(self.placement.borrow().settings.upcoming_lines);
 
+        let highlighted = self.highlighted.get();
         for (index, row) in self.rows.iter().enumerate() {
-            let text = if index <= waiting {
+            let text = if index <= waiting + highlighted {
                 wanted.get(index).cloned().unwrap_or_default()
             } else {
                 String::new()
             };
             row.set_text(&text);
-            row.set_weight(if index == 0 { 1.0 } else { 0.0 });
+            row.set_weight(if index == highlighted { 1.0 } else { 0.0 });
         }
 
         // Shown first: a hidden widget measures as nothing, and `fit` would
         // size the window onto the column to a single pixel.
-        self.lines.set_visible(!wanted[0].is_empty());
+        self.lines
+            .set_visible(!wanted[self.highlighted.get()].is_empty());
         self.fit();
         self.motion.borrow_mut().shown = wanted.to_vec();
     }
@@ -415,7 +430,7 @@ impl Overlay {
     /// sung.
     fn fit(&self) {
         let waiting = usize::from(self.placement.borrow().settings.upcoming_lines);
-        let visible = 1 + waiting;
+        let visible = 1 + waiting + self.highlighted.get();
 
         let mut height = 0;
         for row in self.rows.iter().take(visible) {
@@ -449,7 +464,8 @@ impl Overlay {
         let started = Instant::now();
         let overlay = self.clone();
         let karaoke = self.placement.borrow().settings.karaoke;
-        let arriving = self.rows[1].text();
+        let leaving = self.highlighted.get();
+        let climbing = self.rows[leaving + 1].text();
 
         self.column.add_tick_callback(move |_, _| {
             let progress = (started.elapsed().as_secs_f64() / SLIDE.as_secs_f64()).min(1.0);
@@ -462,10 +478,10 @@ impl Overlay {
             };
 
             adjustment.set_value(step * eased);
-            overlay.rows[0].set_leaving(eased);
-            overlay.rows[1].paint(
+            overlay.rows[leaving].set_leaving(eased);
+            overlay.rows[leaving + 1].paint(
                 eased,
-                karaoke.then(|| sung_bytes(&arriving, overlay.progress.get())),
+                karaoke.then(|| sung_bytes(&climbing, overlay.progress.get())),
             );
 
             if progress < 1.0 {
@@ -560,9 +576,10 @@ impl Overlay {
             self.window.add_css_class(POSITIONING);
             self.window.set_visible(true);
             self.lines.set_visible(true);
-            if self.rows[0].text().is_empty() {
-                self.rows[0].set_text("drag me");
-                self.rows[0].set_weight(1.0);
+            let row = &self.rows[self.highlighted.get()];
+            if row.text().is_empty() {
+                row.set_text("drag me");
+                row.set_weight(1.0);
             }
         } else {
             self.window.remove_css_class(POSITIONING);

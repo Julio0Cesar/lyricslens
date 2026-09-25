@@ -186,7 +186,11 @@ fn main() -> glib::ExitCode {
 
         glib::timeout_add_local(TICK, move || {
             let state = state.borrow();
-            overlay.show(state.line().as_deref(), &state.upcoming());
+            overlay.show(
+                state.before().as_deref(),
+                state.line().as_deref(),
+                &state.upcoming(),
+            );
             overlay.show_progress(state.progress());
             glib::ControlFlow::Continue
         });
@@ -367,6 +371,15 @@ impl State {
     fn progress(&self) -> Option<f64> {
         let position = self.clock.position(Instant::now())?;
         self.lyrics.as_ref()?.progress_at(position)
+    }
+
+    /// The line just sung, when the settings ask for it.
+    fn before(&self) -> Option<String> {
+        if !self.settings.previous_line {
+            return None;
+        }
+        let position = self.clock.position(Instant::now())?;
+        self.lyrics.as_ref()?.before(position).map(str::to_owned)
     }
 
     /// The lines still to come.
