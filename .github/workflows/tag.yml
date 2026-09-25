@@ -6,17 +6,12 @@ name: Tag
 # raising the same line meant one of the two bumps was thrown away by the
 # merge — and with it the release. Nothing here is typed: the number comes from
 # the last tag.
+# No list of paths: the last change to this workflow was not on it, so nothing
+# ran and the release everyone was waiting for never happened. Every merge is a
+# release now, which is one rule instead of a list to keep correct.
 on:
   push:
     branches: [main]
-    paths:
-      - "src/**"
-      - "examples/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "install.sh"
-      - "packaging/**"
-      - ".github/workflows/release.yml"
 
 permissions:
   contents: write
