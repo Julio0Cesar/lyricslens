@@ -32,3 +32,42 @@ zbus = { version = "5.19.0", default-features = false, features = ["tokio"] }
 async-channel = "2.5.0"
 futures-util = "0.3.34"
 zbus = { version = "5.19.0", default-features = false, features = ["tokio"] }
+
+# The .deb built on release. The runtime libraries are named so that
+# `apt install ./lyricslens.deb` pulls them in; `dpkg -i` never does.
+[package.metadata.deb]
+maintainer = "Julio Cesar <julio@byjuliocesa.dev>"
+section = "sound"
+priority = "optional"
+depends = "libgtk-4-1, libadwaita-1-0, libgtk4-layer-shell0, libx11-6"
+extended-description = """
+Reads what your player is playing over MPRIS, finds the lyrics on LRCLIB and \
+draws the line being sung on a layer above every other window."""
+assets = [
+    ["target/release/lyricslens", "usr/bin/", "755"],
+    ["packaging/lyricslens.desktop", "usr/share/applications/", "644"],
+    ["packaging/icons/32.png", "usr/share/icons/hicolor/32x32/apps/lyricslens.png", "644"],
+    ["packaging/icons/64.png", "usr/share/icons/hicolor/64x64/apps/lyricslens.png", "644"],
+    ["packaging/icons/128.png", "usr/share/icons/hicolor/128x128/apps/lyricslens.png", "644"],
+    ["packaging/icons/256.png", "usr/share/icons/hicolor/256x256/apps/lyricslens.png", "644"],
+    ["README.md", "usr/share/doc/lyricslens/README.md", "644"],
+]
+
+# And the .rpm. Fedora and openSUSE spell the same libraries differently, so
+# the requirement is on the shared objects rather than on package names.
+[package.metadata.generate-rpm]
+summary = "Synced lyrics over any window"
+assets = [
+    { source = "target/release/lyricslens", dest = "/usr/bin/lyricslens", mode = "755" },
+    { source = "packaging/lyricslens.desktop", dest = "/usr/share/applications/lyricslens.desktop", mode = "644" },
+    { source = "packaging/icons/32.png", dest = "/usr/share/icons/hicolor/32x32/apps/lyricslens.png", mode = "644" },
+    { source = "packaging/icons/64.png", dest = "/usr/share/icons/hicolor/64x64/apps/lyricslens.png", mode = "644" },
+    { source = "packaging/icons/128.png", dest = "/usr/share/icons/hicolor/128x128/apps/lyricslens.png", mode = "644" },
+    { source = "packaging/icons/256.png", dest = "/usr/share/icons/hicolor/256x256/apps/lyricslens.png", mode = "644" },
+    { source = "README.md", dest = "/usr/share/doc/lyricslens/README.md", mode = "644" },
+]
+
+[package.metadata.generate-rpm.requires]
+"libgtk-4.so.1()(64bit)" = "*"
+"libadwaita-1.so.0()(64bit)" = "*"
+"libgtk4-layer-shell.so.0()(64bit)" = "*"

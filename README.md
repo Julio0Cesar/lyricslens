@@ -43,6 +43,29 @@ curl -fsSL https://raw.githubusercontent.com/Julio0Cesar/lyricslens/main/install
 ```
 
 <details>
+<summary>Debian, Ubuntu and Mint</summary>
+
+Download the `.deb` from [the latest release](https://github.com/Julio0Cesar/lyricslens/releases/latest) and:
+
+```bash
+sudo apt install ./lyricslens-*-x86_64.deb
+```
+
+`apt install ./file.deb` resolves the libraries it needs. `dpkg -i` does not:
+it fails with unmet dependencies and leaves the package half-installed.
+
+</details>
+
+<details>
+<summary>Fedora and openSUSE</summary>
+
+```bash
+sudo dnf install ./lyricslens-*-x86_64.rpm
+```
+
+</details>
+
+<details>
 <summary>On Arch, from the PKGBUILD</summary>
 
 ```bash

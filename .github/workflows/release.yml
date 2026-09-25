@@ -49,6 +49,14 @@ jobs:
       - name: Build
         run: cargo build --release --locked
 
+      # Built from the same binary the archive carries, so the three ways of
+      # installing are the same program.
+      - name: Packages for apt and dnf
+        run: |
+          cargo install cargo-deb cargo-generate-rpm --locked
+          cargo deb --no-build --no-strip
+          cargo generate-rpm
+
       - name: Assemble the archive
         id: pack
         run: |
@@ -59,7 +67,12 @@ jobs:
           cp packaging/icons/*.png "$dir/icons/"
           cp README.md LICENSE "$dir/"
           tar -czf "$dir.tar.gz" "$dir"/*
-          sha256sum "$dir.tar.gz" > SHA256SUMS
+
+          # Named the way the release lists them, next to the archive.
+          cp target/debian/*.deb "lyricslens-$tag-x86_64.deb"
+          cp target/generate-rpm/*.rpm "lyricslens-$tag-x86_64.rpm"
+
+          sha256sum "$dir.tar.gz" *.deb *.rpm > SHA256SUMS
           echo "archive=$dir.tar.gz" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
@@ -72,9 +85,10 @@ jobs:
           tag="${{ steps.pack.outputs.tag }}"
           archive="${{ steps.pack.outputs.archive }}"
 
+          packages=("$archive" "lyricslens-$tag-x86_64.deb" "lyricslens-$tag-x86_64.rpm" SHA256SUMS)
+
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" "$archive" SHA256SUMS --clobber
+            gh release upload "$tag" "${packages[@]}" --clobber
           else
-            gh release create "$tag" "$archive" SHA256SUMS \
-              --title "$tag" --generate-notes
+            gh release create "$tag" "${packages[@]}" --title "$tag" --generate-notes
           fi
