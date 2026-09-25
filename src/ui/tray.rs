@@ -6,6 +6,7 @@
 //! GTK4 has no tray of its own. This speaks StatusNotifierItem, the protocol
 //! every modern bar implements, over D-Bus.
 
+use crate::i18n::t;
 use ksni::blocking::TrayMethods;
 use ksni::menu::{MenuItem, StandardItem};
 
@@ -75,26 +76,26 @@ impl ksni::Tray for Tray {
     fn menu(&self) -> Vec<MenuItem<Self>> {
         vec![
             StandardItem {
-                label: "Show / hide".into(),
+                label: t("Show / hide"),
                 activate: Box::new(|tray: &mut Self| tray.send(Command::Toggle)),
                 ..Default::default()
             }
             .into(),
             StandardItem {
-                label: "Move the overlay".into(),
+                label: t("Move the overlay"),
                 activate: Box::new(|tray: &mut Self| tray.send(Command::Position)),
                 ..Default::default()
             }
             .into(),
             StandardItem {
-                label: "Preferences…".into(),
+                label: t("Preferences…"),
                 activate: Box::new(|tray: &mut Self| tray.send(Command::Settings)),
                 ..Default::default()
             }
             .into(),
             MenuItem::Separator,
             StandardItem {
-                label: "Quit".into(),
+                label: t("Quit"),
                 activate: Box::new(|tray: &mut Self| tray.send(Command::Quit)),
                 ..Default::default()
             }

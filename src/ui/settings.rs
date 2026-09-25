@@ -13,6 +13,7 @@ use gtk::glib;
 use gtk4 as gtk;
 
 use crate::app::Request;
+use crate::i18n::t;
 use crate::lyrics::lrclib::Candidate;
 use crate::lyrics::normalize::from_track;
 use crate::media::Track;
@@ -55,11 +56,11 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     let page = adw::PreferencesPage::new();
 
     let player = Section::new(
-        "Player",
-        "Which player to follow when more than one is open.",
+        &t("Player"),
+        &t("Which player to follow when more than one is open."),
     );
     let player_row = adw::EntryRow::builder()
-        .title("Part of the bus name")
+        .title(t("Part of the bus name"))
         .text(settings.borrow().player.clone().unwrap_or_default())
         .build();
     player_row.connect_changed({
@@ -79,7 +80,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     let mut names: Vec<&str> = vec!["Whichever the compositor picks"];
     names.extend(screens.iter().map(String::as_str));
     let screen = adw::ComboRow::builder()
-        .title("Screen")
+        .title(t("Screen"))
         .model(&gtk::StringList::new(&names))
         .selected(
             settings
@@ -104,12 +105,12 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     });
 
     let look = Section::new(
-        "Appearance",
-        "Every change here shows on the overlay straight away.",
+        &t("Appearance"),
+        &t("Every change here shows on the overlay straight away."),
     );
 
     let font = adw::SpinRow::with_range(12.0, 96.0, 1.0);
-    font.set_title("Font size");
+    font.set_title(&t("Font size"));
     font.set_value(f64::from(settings.borrow().font_size));
     font.connect_value_notify({
         let settings = settings.clone();
@@ -122,8 +123,8 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     look.add(&font);
 
     let margin = adw::SpinRow::with_range(0.0, 800.0, 10.0);
-    margin.set_title("Distance from the bottom");
-    margin.set_subtitle("In pixels");
+    margin.set_title(&t("Distance from the bottom"));
+    margin.set_subtitle(&t("In pixels"));
     margin.set_value(f64::from(settings.borrow().bottom_margin));
     margin.connect_value_notify({
         let settings = settings.clone();
@@ -136,7 +137,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     look.add(&margin);
 
     let family = adw::EntryRow::builder()
-        .title("Font")
+        .title(t("Font"))
         .text(settings.borrow().font_family.clone())
         .build();
     family.connect_changed({
@@ -150,7 +151,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     look.add(&family);
 
     let weight = adw::SpinRow::with_range(100.0, 900.0, 100.0);
-    weight.set_title("Font weight");
+    weight.set_title(&t("Font weight"));
     weight.set_value(f64::from(settings.borrow().font_weight));
     weight.connect_value_notify({
         let settings = settings.clone();
@@ -164,7 +165,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
 
     let alignments = ["Centre", "Left", "Right"];
     let align = adw::ComboRow::builder()
-        .title("Line up the words")
+        .title(t("Line up the words"))
         .model(&gtk::StringList::new(&alignments))
         .selected(match settings.borrow().alignment() {
             "start" => 1,
@@ -188,8 +189,8 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     look.add(&align);
 
     let width = adw::SpinRow::with_range(200.0, 3840.0, 20.0);
-    width.set_title("Width");
-    width.set_subtitle("In pixels. Where a long line wraps");
+    width.set_title(&t("Width"));
+    width.set_subtitle(&t("In pixels. Where a long line wraps"));
     width.set_value(f64::from(settings.borrow().max_width));
     width.connect_value_notify({
         let settings = settings.clone();
@@ -202,8 +203,8 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     look.add(&width);
 
     let corners = adw::SpinRow::with_range(0.0, 40.0, 2.0);
-    corners.set_title("Rounded corners");
-    corners.set_subtitle("In pixels, on the strip behind the line");
+    corners.set_title(&t("Rounded corners"));
+    corners.set_subtitle(&t("In pixels, on the strip behind the line"));
     corners.set_value(f64::from(settings.borrow().corner_radius));
     corners.connect_value_notify({
         let settings = settings.clone();
@@ -216,7 +217,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     look.add(&corners);
 
     let colour = adw::EntryRow::builder()
-        .title("Text colour")
+        .title(t("Text colour"))
         .text(settings.borrow().text_color.clone())
         .build();
     colour.connect_changed({
@@ -235,7 +236,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     look.add(&colour);
 
     let shadow = adw::SwitchRow::builder()
-        .title("Shadow under the text")
+        .title(t("Shadow under the text"))
         .subtitle("What keeps it readable over a bright window")
         .active(settings.borrow().text_shadow)
         .build();
@@ -250,7 +251,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     look.add(&shadow);
 
     let dim = adw::SpinRow::with_range(0.0, 100.0, 5.0);
-    dim.set_title("Darkness behind the line");
+    dim.set_title(&t("Darkness behind the line"));
     dim.set_subtitle("Per cent. Zero shows nothing behind the words");
     dim.set_value(settings.borrow().background_opacity * 100.0);
     dim.connect_value_notify({
@@ -264,7 +265,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     look.add(&dim);
 
     let previous = adw::SwitchRow::builder()
-        .title("Line just sung")
+        .title(t("Line just sung"))
         .subtitle("Kept above the current one, dimmed")
         .active(settings.borrow().previous_line)
         .build();
@@ -279,7 +280,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     look.add(&previous);
 
     let upcoming = adw::SpinRow::with_range(0.0, 3.0, 1.0);
-    upcoming.set_title("Lines still to come");
+    upcoming.set_title(&t("Lines still to come"));
     upcoming.set_subtitle(
         "Shown dimmed underneath. At least one is needed for the line to rise into place",
     );
@@ -295,7 +296,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     look.add(&upcoming);
 
     let karaoke = adw::SwitchRow::builder()
-        .title("Karaoke")
+        .title(t("Karaoke"))
         .subtitle("Fills the line as the song moves through it")
         .active(settings.borrow().karaoke)
         .build();
@@ -310,7 +311,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     look.add(&karaoke);
 
     let paused = adw::SwitchRow::builder()
-        .title("Hide while paused")
+        .title(t("Hide while paused"))
         .subtitle("Lyrics on screen with nothing playing is the most confusing thing it can do")
         .active(settings.borrow().hide_when_paused)
         .build();
@@ -325,7 +326,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     look.add(&paused);
 
     let timing = Section::new(
-        "Timing",
+        &t("Timing"),
         "Positive holds the lyrics back, negative brings them forward.",
     );
 
@@ -338,7 +339,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
         .clone()
         .unwrap_or_else(|| "default".to_owned());
     let offset = adw::SpinRow::with_range(-5000.0, 5000.0, 50.0);
-    offset.set_title("Offset in milliseconds");
+    offset.set_title(&t("Offset in milliseconds"));
     offset.set_subtitle(&followed);
     offset.set_value(settings.borrow().offset_ms(&followed) as f64);
     offset.connect_value_notify({
@@ -353,12 +354,12 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     timing.add(&offset);
 
     let place = Section::new(
-        "Position",
+        &t("Position"),
         "A layer surface belongs to one screen and cannot be dragged to another.",
     );
 
     let movable = adw::SwitchRow::builder()
-        .title("Let me move it")
+        .title(t("Let me move it"))
         .subtitle("The overlay takes your clicks while this is on, so you can drag it")
         .active(settings.borrow().movable)
         .build();
@@ -376,7 +377,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     // A program with no window of its own needs a way out that is not the
     // tray, for the desktops that have none.
     let keys = Section::new(
-        "Keys",
+        &t("Keys"),
         &match crate::desktop::compositor() {
             crate::desktop::Compositor::Unknown => {
                 "This desktop cannot be asked for a key. Bind one yourself to `lyricslens --toggle`."
@@ -390,7 +391,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     );
 
     let toggle_key = adw::EntryRow::builder()
-        .title("Show and hide")
+        .title(t("Show and hide"))
         .text(settings.borrow().hotkey_toggle.clone())
         .build();
     toggle_key.connect_changed({
@@ -404,7 +405,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     keys.add(&toggle_key);
 
     let position_key = adw::EntryRow::builder()
-        .title("Move it")
+        .title(t("Move it"))
         .text(settings.borrow().hotkey_position.clone())
         .build();
     position_key.connect_changed({
@@ -441,7 +442,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     let copy = gtk::Button::builder()
         .icon_name("edit-copy-symbolic")
         .valign(gtk::Align::Center)
-        .tooltip_text("Copy")
+        .tooltip_text(t("Copy"))
         .build();
     copy.add_css_class("flat");
     copy.connect_clicked({
@@ -451,18 +452,18 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
             if let Some(display) = gtk::gdk::Display::default() {
                 display.clipboard().set_text(&text);
             }
-            button.set_tooltip_text(Some("Copied"));
+            button.set_tooltip_text(Some(&t("Copied")));
         }
     });
     line.add_suffix(&copy);
     keys.add(&line);
 
     let start = Section::new(
-        "Starting",
+        &t("Starting"),
         "The switch reads the file it writes, so it can never show on for something that is off.",
     );
     let session = adw::SwitchRow::builder()
-        .title("Start with the session")
+        .title(t("Start with the session"))
         .subtitle("Opens when you log in, with the overlay ready")
         .active(autostart::enabled())
         .build();
@@ -480,7 +481,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
         .and_then(|search| search.newer.borrow().clone())
     {
         let news = Section::new(
-            "A newer version is out",
+            &t("A newer version is out"),
             &format!(
                 "You are running {}. {version} is available.",
                 env!("CARGO_PKG_VERSION")
@@ -495,9 +496,9 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
         page.add(&news.group);
     }
 
-    let close = Section::new("Closing", "");
+    let close = Section::new(&t("Closing"), "");
     let quit = adw::ActionRow::builder()
-        .title("Quit LyricsLens")
+        .title(t("Quit LyricsLens"))
         .subtitle("Closes the overlay and leaves the status bar")
         .activatable(true)
         .build();
@@ -578,17 +579,17 @@ fn divider() -> adw::PreferencesGroup {
 /// is kept for the track playing now, so the same song comes back right.
 fn lyrics_group(search: &Search) -> Section {
     let group = Section::new(
-        "Lyrics for this track",
-        "When the wrong words are on screen, find the right ones by hand.",
+        &t("Lyrics for this track"),
+        &t("When the wrong words are on screen, find the right ones by hand."),
     );
 
     let query = from_track(&search.playing.borrow());
     let artist = adw::EntryRow::builder()
-        .title("Artist")
+        .title(t("Artist"))
         .text(query.artist.unwrap_or_default())
         .build();
     let title = adw::EntryRow::builder()
-        .title("Title")
+        .title(t("Title"))
         .text(query.title)
         .build();
 
@@ -613,7 +614,7 @@ fn lyrics_group(search: &Search) -> Section {
     status.add_css_class("dim-label");
 
     let button = gtk::Button::builder()
-        .label("Search")
+        .label(t("Search"))
         .halign(gtk::Align::End)
         .margin_top(6)
         .build();
@@ -633,7 +634,7 @@ fn lyrics_group(search: &Search) -> Section {
             }
 
             button.set_sensitive(false);
-            status.set_label("Searching…");
+            status.set_label(&t("Searching…"));
             status.set_visible(true);
             results.set_visible(false);
 
@@ -647,7 +648,7 @@ fn lyrics_group(search: &Search) -> Section {
             let button = button.clone();
             glib::spawn_future_local(async move {
                 if search.requests.send(request).await.is_err() {
-                    status.set_label("The overlay is not running.");
+                    status.set_label(&t("The overlay is not running."));
                     button.set_sensitive(true);
                     return;
                 }
@@ -745,7 +746,7 @@ fn fill(results: &gtk::ListBox, status: &gtk::Label, search: &Search, found: Vec
             move |row| {
                 let search = search.clone();
                 let candidate = candidate.clone();
-                row.set_subtitle("Now showing these");
+                row.set_subtitle(&t("Now showing these"));
                 glib::spawn_future_local(async move {
                     let _ = search
                         .requests

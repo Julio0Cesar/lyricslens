@@ -7,6 +7,7 @@ use gtk::gio;
 use gtk::glib;
 use gtk4 as gtk;
 use lyricslens::app::{self, Update};
+use lyricslens::i18n::t;
 use lyricslens::lyrics::Lyrics;
 use lyricslens::media::{Event, Track};
 use lyricslens::store::settings::Settings;
@@ -339,8 +340,10 @@ impl State {
                 self.lyrics = *lyrics;
                 self.searching = false;
                 *self.report.borrow_mut() = match &self.lyrics {
-                    Some(lyrics) => format!("Following {} lines.", lyrics.lines.len()),
-                    None => "No synced lyrics found for this one.".to_owned(),
+                    Some(lyrics) => {
+                        format!("{} {}", lyrics.lines.len(), t("lines being followed."))
+                    }
+                    None => t("No synced lyrics found for this one."),
                 };
             }
             Update::Player(name) => self.clock.set_offset_ms(self.settings.offset_ms(&name)),
@@ -353,7 +356,7 @@ impl State {
                 self.searching = !track.is_empty();
                 self.since = Instant::now();
                 *self.report.borrow_mut() = if self.searching {
-                    "Looking…".to_owned()
+                    t("Looking…")
                 } else {
                     String::new()
                 };
@@ -434,10 +437,9 @@ impl State {
         // A player that reports no position is a standing fact, not news: it
         // will not change while this song plays, and nothing will ever appear.
         if self.stalled {
-            let title = self.track.title.as_deref().unwrap_or("unknown track");
-            return Some(format!(
-                "{title}  ·  this player does not report its position"
-            ));
+            let title = self.title();
+            let reason = t("this player does not report its position");
+            return Some(format!("{title}  ·  {reason}"));
         }
 
         // Everything else is news, and news goes quiet. The preferences window
@@ -446,14 +448,21 @@ impl State {
             return None;
         }
 
-        let title = self.track.title.as_deref().unwrap_or("unknown track");
+        let title = self.title();
         let reason = if self.searching {
-            "looking for the lyrics…"
+            t("looking for the lyrics…")
         } else if self.lyrics.is_none() {
-            "no synced lyrics for this one"
+            t("no synced lyrics for this one")
         } else {
-            "waiting for the player"
+            t("waiting for the player")
         };
         Some(format!("{title}  ·  {reason}"))
+    }
+
+    fn title(&self) -> String {
+        self.track
+            .title
+            .clone()
+            .unwrap_or_else(|| t("unknown track"))
     }
 }
