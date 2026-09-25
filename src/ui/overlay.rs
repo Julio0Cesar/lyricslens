@@ -58,11 +58,19 @@ fn style(settings: &Settings) -> String {
     };
     let strip = if settings.background_opacity > 0.0 {
         format!(
-            "background: rgba(0, 0, 0, {:.2}); border-radius: 14px;",
-            settings.background_opacity.clamp(0.0, 1.0)
+            "background: rgba(0, 0, 0, {:.2}); border-radius: {}px;",
+            settings.background_opacity.clamp(0.0, 1.0),
+            settings.corner_radius
         )
     } else {
         "background: transparent;".to_owned()
+    };
+    // An empty name leaves the desktop's own font alone, which is what most
+    // people want and nobody has to type.
+    let family = if settings.font_family.trim().is_empty() {
+        String::new()
+    } else {
+        format!("font-family: \"{}\";", settings.font_family.trim())
     };
 
     format!(
@@ -77,11 +85,13 @@ fn style(settings: &Settings) -> String {
          window.{OVERLAY} label {{
              color: {color};
              font-size: {size}px;
-             font-weight: 600;
+             font-weight: {weight};
+             {family}
              {shadow}
          }}",
         color = settings.text_color,
         size = settings.font_size,
+        weight = settings.font_weight.clamp(100, 900),
     )
 }
 
@@ -143,6 +153,24 @@ impl Row {
 
     fn root(&self) -> &Label {
         &self.text
+    }
+
+    /// Which edge the words line up with, and where they wrap.
+    fn align(&self, align: gtk::Align, justify: gtk::Justification, width: i32) {
+        self.text.set_halign(align);
+        self.text.set_justify(justify);
+        // Wrapping is what `max_width` is really about: the surface is as wide
+        // as its longest line until this stops it.
+        self.text.set_size_request(-1, -1);
+        self.text.set_max_width_chars(-1);
+        self.text.set_width_request(-1);
+        self.text.set_wrap(true);
+        self.text.set_xalign(match align {
+            gtk::Align::Start => 0.0,
+            gtk::Align::End => 1.0,
+            _ => 0.5,
+        });
+        let _ = width;
     }
 
     fn set_text(&self, text: &str) {
@@ -349,6 +377,7 @@ impl Overlay {
             layer_shell,
         };
 
+        overlay.shape(settings);
         overlay.place();
         overlay.watch_drag();
         overlay.window.present();
@@ -397,6 +426,25 @@ impl Overlay {
         }
         // Nothing to slide from: a new song, a seek, or only the tail changed.
         self.settle(&wanted);
+    }
+
+    /// How wide the overlay may get, and which edge the words line up with.
+    fn shape(&self, settings: &Settings) {
+        let width = i32::try_from(settings.max_width.max(120)).unwrap_or(900);
+        // The height stays generous: a surface asked for its natural height
+        // before anything is on it comes out one pixel tall.
+        self.window.set_default_size(width, 220);
+
+        let (align, justify) = match settings.alignment() {
+            "start" => (gtk::Align::Start, gtk::Justification::Left),
+            "end" => (gtk::Align::End, gtk::Justification::Right),
+            _ => (gtk::Align::Center, gtk::Justification::Center),
+        };
+        self.lines.set_halign(align);
+        self.column.set_halign(align);
+        for row in &self.rows {
+            row.align(align, justify, width);
+        }
     }
 
     /// Puts the lines where they belong, with no movement.
@@ -523,6 +571,7 @@ impl Overlay {
     /// Takes the settings again, after the preferences window changed them.
     pub fn reload(&self, settings: &Settings) {
         self.provider.load_from_string(&style(settings));
+        self.shape(settings);
         let movable = settings.movable;
         {
             let mut placement = self.placement.borrow_mut();

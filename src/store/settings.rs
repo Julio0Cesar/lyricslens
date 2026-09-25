@@ -32,6 +32,16 @@ pub struct Settings {
     /// what it is until the overlay is dragged somewhere else.
     pub left_margin: Option<i32>,
     pub font_size: u32,
+    /// The font by name, as the desktop knows it. Empty follows the desktop.
+    pub font_family: String,
+    /// From 100 to 900, the way a font names its weights.
+    pub font_weight: u32,
+    /// `center`, `start` or `end`. Anything else is read as `center`.
+    pub align: String,
+    /// How wide the overlay may get before a line wraps, in pixels.
+    pub max_width: u32,
+    /// How round the corners of the strip are, in pixels.
+    pub corner_radius: u32,
     /// The colour of the line being sung.
     pub text_color: String,
     /// A shadow under the text, which is what keeps it readable over a bright
@@ -69,6 +79,11 @@ impl Default for Settings {
             bottom_margin: 100,
             left_margin: None,
             font_size: 30,
+            font_family: String::new(),
+            font_weight: 600,
+            align: "center".to_owned(),
+            max_width: 900,
+            corner_radius: 14,
             text_color: "#ffffff".to_owned(),
             text_shadow: true,
             background_opacity: 0.0,
@@ -83,6 +98,15 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// The alignment as GTK spells it, with anything unrecognised centred.
+    pub fn alignment(&self) -> &'static str {
+        match self.align.trim().to_ascii_lowercase().as_str() {
+            "start" | "left" => "start",
+            "end" | "right" => "end",
+            _ => "center",
+        }
+    }
+
     /// Reads the settings, falling back to the defaults for anything missing.
     pub fn load() -> Self {
         let Some(path) = path() else {

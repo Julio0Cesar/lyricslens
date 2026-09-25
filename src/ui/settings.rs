@@ -133,6 +133,86 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     });
     look.add(&margin);
 
+    let family = adw::EntryRow::builder()
+        .title("Font")
+        .text(settings.borrow().font_family.clone())
+        .build();
+    family.connect_changed({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            settings.borrow_mut().font_family = row.text().trim().to_owned();
+            save(&settings.borrow(), &app);
+        }
+    });
+    look.add(&family);
+
+    let weight = adw::SpinRow::with_range(100.0, 900.0, 100.0);
+    weight.set_title("Font weight");
+    weight.set_value(f64::from(settings.borrow().font_weight));
+    weight.connect_value_notify({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            settings.borrow_mut().font_weight = row.value().max(100.0) as u32;
+            save(&settings.borrow(), &app);
+        }
+    });
+    look.add(&weight);
+
+    let alignments = ["Centre", "Left", "Right"];
+    let align = adw::ComboRow::builder()
+        .title("Line up the words")
+        .model(&gtk::StringList::new(&alignments))
+        .selected(match settings.borrow().alignment() {
+            "start" => 1,
+            "end" => 2,
+            _ => 0,
+        })
+        .build();
+    align.connect_selected_notify({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            settings.borrow_mut().align = match row.selected() {
+                1 => "start",
+                2 => "end",
+                _ => "center",
+            }
+            .to_owned();
+            save(&settings.borrow(), &app);
+        }
+    });
+    look.add(&align);
+
+    let width = adw::SpinRow::with_range(200.0, 3840.0, 20.0);
+    width.set_title("Width");
+    width.set_subtitle("In pixels. Where a long line wraps");
+    width.set_value(f64::from(settings.borrow().max_width));
+    width.connect_value_notify({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            settings.borrow_mut().max_width = row.value().max(0.0) as u32;
+            save(&settings.borrow(), &app);
+        }
+    });
+    look.add(&width);
+
+    let corners = adw::SpinRow::with_range(0.0, 40.0, 2.0);
+    corners.set_title("Rounded corners");
+    corners.set_subtitle("In pixels, on the strip behind the line");
+    corners.set_value(f64::from(settings.borrow().corner_radius));
+    corners.connect_value_notify({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            settings.borrow_mut().corner_radius = row.value().max(0.0) as u32;
+            save(&settings.borrow(), &app);
+        }
+    });
+    look.add(&corners);
+
     let colour = adw::EntryRow::builder()
         .title("Text colour")
         .text(settings.borrow().text_color.clone())
