@@ -118,8 +118,10 @@ screen is a choice in the preferences rather than a drag across the edge.
 
 ### How it looks
 
-The preferences window holds the font size, the text colour, the shadow that
-keeps it readable over a bright window, how dark the strip behind the line is,
+The preferences window holds the font and its size and weight, the text
+colour, which edge the words line up with, how wide the overlay gets before a
+line wraps, how round the strip's corners are, the shadow that keeps it
+readable over a bright window, how dark the strip behind the line is,
 the line just sung above and how many are shown coming up underneath, a
 karaoke mode that fills the line as the song moves through it, and whether the
 overlay clears while the player is paused. Every one of them shows on
