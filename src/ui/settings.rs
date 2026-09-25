@@ -49,10 +49,10 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
 
     let page = adw::PreferencesPage::new();
 
-    let player = adw::PreferencesGroup::builder()
-        .title("Player")
-        .description("Which player to follow when more than one is open.")
-        .build();
+    let player = Section::new(
+        "Player",
+        "Which player to follow when more than one is open.",
+    );
     let player_row = adw::EntryRow::builder()
         .title("Part of the bus name")
         .text(settings.borrow().player.clone().unwrap_or_default())
@@ -98,10 +98,10 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
         }
     });
 
-    let look = adw::PreferencesGroup::builder()
-        .title("Appearance")
-        .description("Every change here shows on the overlay straight away.")
-        .build();
+    let look = Section::new(
+        "Appearance",
+        "Every change here shows on the overlay straight away.",
+    );
 
     let font = adw::SpinRow::with_range(12.0, 96.0, 1.0);
     font.set_title("Font size");
@@ -224,10 +224,10 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     });
     look.add(&paused);
 
-    let timing = adw::PreferencesGroup::builder()
-        .title("Timing")
-        .description("Positive holds the lyrics back, negative brings them forward.")
-        .build();
+    let timing = Section::new(
+        "Timing",
+        "Positive holds the lyrics back, negative brings them forward.",
+    );
 
     // The offset is kept per player, and which one is being followed is only
     // known while the overlay runs. Editing the one that is configured is what
@@ -252,10 +252,10 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     });
     timing.add(&offset);
 
-    let place = adw::PreferencesGroup::builder()
-        .title("Position")
-        .description("A layer surface belongs to one screen and cannot be dragged to another.")
-        .build();
+    let place = Section::new(
+        "Position",
+        "A layer surface belongs to one screen and cannot be dragged to another.",
+    );
 
     let movable = adw::SwitchRow::builder()
         .title("Let me move it")
@@ -275,7 +275,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
 
     // A program with no window of its own needs a way out that is not the
     // tray, for the desktops that have none.
-    let close = adw::PreferencesGroup::new();
+    let close = Section::new("Closing", "");
     let quit = adw::ActionRow::builder()
         .title("Quit LyricsLens")
         .subtitle("Closes the overlay and leaves the status bar")
@@ -287,14 +287,15 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     });
     close.add(&quit);
 
-    page.add(&player);
+    page.add(&player.group);
     if let Some(search) = search {
-        page.add(&lyrics_group(&search));
+        page.add(&divider());
+        page.add(&lyrics_group(&search).group);
     }
-    page.add(&look);
-    page.add(&place);
-    page.add(&timing);
-    page.add(&close);
+    for section in [&look, &place, &timing, &close] {
+        page.add(&divider());
+        page.add(&section.group);
+    }
     window.add(&page);
     window.present();
 }
@@ -308,15 +309,85 @@ fn save(settings: &Settings, app: &adw::Application) {
     app.activate_action("reload", None);
 }
 
+/// A heading with a chevron, and the rows it hides.
+///
+/// libadwaita collapses a row, not a whole group, so the rows live in a
+/// revealer under a heading that toggles it.
+#[derive(Clone)]
+struct Section {
+    group: adw::PreferencesGroup,
+    rows: gtk::ListBox,
+}
+
+impl Section {
+    fn new(title: &str, description: &str) -> Self {
+        let rows = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .build();
+        rows.add_css_class("boxed-list");
+
+        let revealer = gtk::Revealer::builder()
+            .child(&rows)
+            .reveal_child(true)
+            .transition_type(gtk::RevealerTransitionType::SlideDown)
+            .build();
+
+        let chevron = gtk::Button::builder()
+            .icon_name("pan-up-symbolic")
+            .valign(gtk::Align::Center)
+            .tooltip_text("Show or hide")
+            .build();
+        chevron.add_css_class("flat");
+        chevron.connect_clicked({
+            let revealer = revealer.clone();
+            move |chevron| {
+                let open = !revealer.reveals_child();
+                revealer.set_reveal_child(open);
+                chevron.set_icon_name(if open {
+                    "pan-up-symbolic"
+                } else {
+                    "pan-down-symbolic"
+                });
+            }
+        });
+
+        let group = adw::PreferencesGroup::builder()
+            .title(title)
+            .description(description)
+            .header_suffix(&chevron)
+            .build();
+        group.add(&revealer);
+
+        Self { group, rows }
+    }
+
+    fn add(&self, row: &impl IsA<gtk::Widget>) {
+        self.rows.append(row);
+    }
+}
+
+/// A line between two sections, which a page of groups has no other way to
+/// draw.
+fn divider() -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::new();
+    let line = gtk::Separator::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .margin_top(2)
+        .margin_bottom(2)
+        .build();
+    group.add(&line);
+    group
+}
+
 /// The rescue for when the automatic match lands on the wrong recording.
 ///
 /// Type a name, see everything the service has under it, pick one. The choice
 /// is kept for the track playing now, so the same song comes back right.
-fn lyrics_group(search: &Search) -> adw::PreferencesGroup {
-    let group = adw::PreferencesGroup::builder()
-        .title("Lyrics for this track")
-        .description("When the wrong words are on screen, find the right ones by hand.")
-        .build();
+fn lyrics_group(search: &Search) -> Section {
+    let group = Section::new(
+        "Lyrics for this track",
+        "When the wrong words are on screen, find the right ones by hand.",
+    );
 
     let query = from_track(&search.playing.borrow());
     let artist = adw::EntryRow::builder()
@@ -395,6 +466,41 @@ fn lyrics_group(search: &Search) -> adw::PreferencesGroup {
     group.add(&button);
     group.add(&status);
     group.add(&results);
+
+    // The window outlives the song. When the track changes under it, the boxes
+    // hold the name of something that is no longer playing and the list below
+    // answers a question nobody is asking any more.
+    let mut showing = search.playing.borrow().clone();
+    glib::timeout_add_local(Duration::from_millis(500), {
+        let search = search.clone();
+        let artist = artist.clone();
+        let title = title.clone();
+        let results = results.clone();
+        let status = status.clone();
+        move || {
+            // The window was closed; nothing left to keep in step.
+            if artist.root().is_none() {
+                return glib::ControlFlow::Break;
+            }
+
+            let playing = search.playing.borrow().clone();
+            if playing == showing {
+                return glib::ControlFlow::Continue;
+            }
+            showing = playing.clone();
+
+            let query = from_track(&playing);
+            artist.set_text(&query.artist.unwrap_or_default());
+            title.set_text(&query.title);
+            while let Some(row) = results.first_child() {
+                results.remove(&row);
+            }
+            results.set_visible(false);
+            status.set_visible(false);
+            glib::ControlFlow::Continue
+        }
+    });
+
     group
 }
 
