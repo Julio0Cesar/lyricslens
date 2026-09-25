@@ -354,8 +354,10 @@ impl Overlay {
             row.set_weight(if index == 1 { 1.0 } else { 0.0 });
         }
 
-        self.fit();
+        // Shown first: a hidden widget measures as nothing, and `fit` would
+        // size the viewport to a single pixel.
         self.lines.set_visible(!wanted[0].is_empty());
+        self.fit();
         self.motion.borrow_mut().shown = wanted.to_vec();
     }
 
@@ -373,8 +375,10 @@ impl Overlay {
             let (_, natural, _, _) = row.root.measure(gtk::Orientation::Vertical, -1);
             height += natural + SPACING;
         }
-        self.viewport
-            .set_size_request(-1, (height - SPACING).max(1));
+        if height <= SPACING {
+            return;
+        }
+        self.viewport.set_size_request(-1, height - SPACING);
 
         let (_, gone, _, _) = self.rows[0].root.measure(gtk::Orientation::Vertical, -1);
         self.viewport

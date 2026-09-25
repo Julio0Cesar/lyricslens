@@ -88,6 +88,10 @@ async fn once(updates: &async_channel::Sender<Update>, wanted: Option<&str>) -> 
     let connection = Connection::session().await?;
     let Some(name) = mpris::pick(&connection, wanted).await? else {
         tracing::debug!("no MPRIS player on the bus");
+        // Whatever was on screen belongs to a player that is gone.
+        let _ = updates
+            .send(Update::Media(Event::TrackChanged(Track::default())))
+            .await;
         return Ok(());
     };
     if updates
@@ -131,6 +135,11 @@ async fn once(updates: &async_channel::Sender<Update>, wanted: Option<&str>) -> 
     if let Some(lookup) = lookup {
         lookup.abort();
     }
+    // The player left, or stopped talking. Either way there is nothing to sing
+    // along to, and the last line must not sit there as if there were.
+    let _ = updates
+        .send(Update::Media(Event::TrackChanged(Track::default())))
+        .await;
     Ok(())
 }
 

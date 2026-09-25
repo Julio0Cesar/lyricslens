@@ -256,9 +256,11 @@ impl State {
             }
             Update::Player(name) => self.clock.set_offset_ms(self.settings.offset_ms(&name)),
             Update::Media(Event::TrackChanged(track)) => {
+                // An empty track means no player at all, so there is nothing
+                // to look up and nothing to wait for.
+                self.searching = !track.is_empty();
                 self.track = track;
                 self.lyrics = None;
-                self.searching = true;
                 self.stalled = false;
                 self.clock.reset();
             }
