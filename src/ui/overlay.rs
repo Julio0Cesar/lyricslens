@@ -8,7 +8,7 @@
 //! fainter, and when its turn comes the whole column slides up by one row
 //! while that same widget grows into place and the one above it leaves.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -203,6 +203,10 @@ pub struct Overlay {
     rows: Vec<Row>,
     provider: CssProvider,
     motion: Rc<RefCell<Motion>>,
+    /// How far through the line being sung the song is, as of the last tick.
+    /// The slide reads it so the line climbing into place arrives already lit
+    /// as far as it should be.
+    progress: Rc<Cell<f64>>,
     placement: Rc<RefCell<Placement>>,
     /// False where the compositor has no layer-shell and the window fell back
     /// to X11. Every placement decision differs between the two.
@@ -306,6 +310,7 @@ impl Overlay {
             column,
             rows,
             provider,
+            progress: Rc::new(Cell::new(0.0)),
             motion: Rc::new(RefCell::new(Motion {
                 shown: vec![String::new(); ROWS],
                 wanted: vec![String::new(); ROWS],
@@ -422,6 +427,8 @@ impl Overlay {
 
         let started = Instant::now();
         let overlay = self.clone();
+        let karaoke = self.placement.borrow().settings.karaoke;
+        let arriving = self.rows[1].text();
 
         self.column.add_tick_callback(move |_, _| {
             let progress = (started.elapsed().as_secs_f64() / SLIDE.as_secs_f64()).min(1.0);
@@ -435,7 +442,10 @@ impl Overlay {
 
             adjustment.set_value(step * eased);
             overlay.rows[0].set_leaving(eased);
-            overlay.rows[1].set_weight(eased);
+            overlay.rows[1].paint(
+                eased,
+                karaoke.then(|| sung_bytes(&arriving, overlay.progress.get())),
+            );
 
             if progress < 1.0 {
                 return ControlFlow::Continue;
@@ -455,9 +465,18 @@ impl Overlay {
     /// Does nothing unless karaoke is on, and nothing while the column is
     /// moving: a half-drawn line under a sliding one reads as a glitch.
     pub fn show_progress(&self, progress: Option<f64>) {
+        self.progress.set(progress.unwrap_or(0.0));
+
+        // The slide paints the row that is climbing, with this same value. Two
+        // hands on the same line is what made it flash: lit on the way up,
+        // then dark again the moment it arrived.
+        if self.motion.borrow().running {
+            return;
+        }
+
         let karaoke = self.placement.borrow().settings.karaoke;
         let row = &self.rows[0];
-        let Some(progress) = progress.filter(|_| karaoke && !self.motion.borrow().running) else {
+        let Some(progress) = progress.filter(|_| karaoke) else {
             row.paint(1.0, None);
             return;
         };
