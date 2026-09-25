@@ -1,5 +1,6 @@
 //! What survives a restart: settings and the lyrics already fetched.
 
+pub mod autostart;
 pub mod cache;
 pub mod settings;
 

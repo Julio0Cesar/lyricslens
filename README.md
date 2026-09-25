@@ -123,8 +123,8 @@ fills the line as the song moves through it, and whether the overlay clears
 while the player is paused. Every one of them shows on
 the overlay straight away.
 
-The same window has the switch that lets you drag the overlay, and the screen
-it lives on.
+The same window has the switch that lets you drag the overlay, the screen it
+lives on, and whether it starts with your session.
 
 ### When the words are wrong
 

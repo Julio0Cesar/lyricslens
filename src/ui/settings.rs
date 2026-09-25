@@ -16,6 +16,7 @@ use crate::app::Request;
 use crate::lyrics::lrclib::Candidate;
 use crate::lyrics::normalize::from_track;
 use crate::media::Track;
+use crate::store::autostart;
 use crate::store::settings::Settings;
 
 /// What the window needs to look lyrics up and hand a choice back.
@@ -277,6 +278,24 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
 
     // A program with no window of its own needs a way out that is not the
     // tray, for the desktops that have none.
+    let start = Section::new(
+        "Starting",
+        "The switch reads the file it writes, so it can never show on for something that is off.",
+    );
+    let session = adw::SwitchRow::builder()
+        .title("Start with the session")
+        .subtitle("Opens when you log in, with the overlay ready")
+        .active(autostart::enabled())
+        .build();
+    session.connect_active_notify(|row| {
+        if let Err(error) = autostart::set(row.is_active()) {
+            tracing::warn!(%error, "could not change the autostart entry");
+            // Says what is true, not what was asked for.
+            row.set_active(autostart::enabled());
+        }
+    });
+    start.add(&session);
+
     let close = Section::new("Closing", "");
     let quit = adw::ActionRow::builder()
         .title("Quit LyricsLens")
@@ -294,7 +313,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
         page.add(&divider());
         page.add(&lyrics_group(&search).group);
     }
-    for section in [&look, &place, &timing, &close] {
+    for section in [&look, &place, &timing, &start, &close] {
         page.add(&divider());
         page.add(&section.group);
     }
