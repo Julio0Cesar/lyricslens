@@ -28,7 +28,7 @@ mod x11;
 ///
 /// Short enough to be over before the next line is due: a slide still running
 /// when the song moves on reads as lag, not as motion.
-const SLIDE: Duration = Duration::from_millis(220);
+const SLIDE: Duration = Duration::from_millis(320);
 
 /// The gap between rows.
 const SPACING: i32 = 6;
@@ -37,8 +37,8 @@ const SPACING: i32 = 6;
 const WAITING_SCALE: f64 = 0.7;
 const WAITING_OPACITY: f64 = 0.45;
 
-/// One line that has just left, the one being sung, and three waiting.
-const ROWS: usize = 5;
+/// The line being sung and three waiting. More is a wall of text.
+const ROWS: usize = 4;
 
 /// Marks the window while it is being moved, so there is something to grab.
 const POSITIONING: &str = "positioning";
@@ -221,7 +221,7 @@ impl Overlay {
         let rows: Vec<Row> = (0..ROWS).map(|_| Row::new()).collect();
         for (index, row) in rows.iter().enumerate() {
             row.root.set_visible(false);
-            row.set_weight(if index == 1 { 1.0 } else { 0.0 });
+            row.set_weight(if index == 0 { 1.0 } else { 0.0 });
             column.append(&row.root);
         }
 
@@ -324,7 +324,7 @@ impl Overlay {
         if !changed || running {
             return;
         }
-        if moved && !self.rows[2].text().is_empty() && self.rows[2].text() == wanted[0] {
+        if moved && !self.rows[1].text().is_empty() && self.rows[1].text() == wanted[0] {
             self.motion.borrow_mut().running = true;
             self.slide();
             return;
@@ -335,27 +335,24 @@ impl Overlay {
 
     /// Puts the lines where they belong, with no movement.
     ///
-    /// Row 0 is the line that has already gone; it stays in the column so the
-    /// next one has somewhere to climb from, and the viewport is scrolled past
-    /// it.
+    /// The line being sung is the first row, and the window onto the column
+    /// sits at the top of it. Nothing is hidden above: a row that has gone has
+    /// already been written over.
     fn settle(&self, wanted: &[String]) {
         let waiting = usize::from(self.placement.borrow().settings.upcoming_lines);
-        let previous = self.rows[1].text();
 
-        self.rows[0].set_text(&previous);
-        self.rows[0].set_weight(1.0);
-        for (index, row) in self.rows.iter().enumerate().skip(1) {
-            let text = if index <= waiting + 1 {
-                wanted.get(index - 1).cloned().unwrap_or_default()
+        for (index, row) in self.rows.iter().enumerate() {
+            let text = if index <= waiting {
+                wanted.get(index).cloned().unwrap_or_default()
             } else {
                 String::new()
             };
             row.set_text(&text);
-            row.set_weight(if index == 1 { 1.0 } else { 0.0 });
+            row.set_weight(if index == 0 { 1.0 } else { 0.0 });
         }
 
         // Shown first: a hidden widget measures as nothing, and `fit` would
-        // size the viewport to a single pixel.
+        // size the window onto the column to a single pixel.
         self.lines.set_visible(!wanted[0].is_empty());
         self.fit();
         self.motion.borrow_mut().shown = wanted.to_vec();
@@ -368,7 +365,7 @@ impl Overlay {
         let visible = 1 + waiting;
 
         let mut height = 0;
-        for row in self.rows.iter().skip(1).take(visible) {
+        for row in self.rows.iter().take(visible) {
             if !row.root.is_visible() {
                 continue;
             }
@@ -379,30 +376,39 @@ impl Overlay {
             return;
         }
         self.viewport.set_size_request(-1, height - SPACING);
-
-        let (_, gone, _, _) = self.rows[0].root.measure(gtk::Orientation::Vertical, -1);
-        self.viewport
-            .vadjustment()
-            .set_value(f64::from(gone + SPACING));
+        self.viewport.vadjustment().set_value(0.0);
     }
 
     /// Scrolls the column up by one row, over time.
     fn slide(&self) {
         let adjustment = self.viewport.vadjustment();
-        let from = adjustment.value();
-        let (_, step, _, _) = self.rows[1].root.measure(gtk::Orientation::Vertical, -1);
-        let step = f64::from(step + SPACING);
+        // The height it has on screen, not the one it would like: a line that
+        // wrapped is taller than its unconstrained measurement, and scrolling
+        // by the smaller number leaves the row that left still showing.
+        let step = f64::from(self.rows[0].root.height() + SPACING);
+        if step <= f64::from(SPACING) {
+            let wanted = self.motion.borrow().wanted.clone();
+            self.motion.borrow_mut().running = false;
+            self.settle(&wanted);
+            return;
+        }
 
         let started = Instant::now();
         let overlay = self.clone();
 
         self.column.add_tick_callback(move |_, _| {
             let progress = (started.elapsed().as_secs_f64() / SLIDE.as_secs_f64()).min(1.0);
-            let eased = 1.0 - (1.0 - progress).powi(3);
+            // Slow at both ends: a row that starts and stops gently reads as
+            // one movement rather than a jump that was slowed down.
+            let eased = if progress < 0.5 {
+                4.0 * progress.powi(3)
+            } else {
+                1.0 - (-2.0f64).mul_add(progress, 2.0).powi(3) / 2.0
+            };
 
-            adjustment.set_value(from + step * eased);
-            overlay.rows[1].set_leaving(eased);
-            overlay.rows[2].set_weight(eased);
+            adjustment.set_value(step * eased);
+            overlay.rows[0].set_leaving(eased);
+            overlay.rows[1].set_weight(eased);
 
             if progress < 1.0 {
                 return ControlFlow::Continue;
@@ -423,7 +429,7 @@ impl Overlay {
     /// moving: a half-drawn fill under a sliding line reads as a glitch.
     pub fn show_progress(&self, progress: Option<f64>) {
         let karaoke = self.placement.borrow().settings.karaoke;
-        let row = &self.rows[1];
+        let row = &self.rows[0];
         let Some(progress) = progress.filter(|_| karaoke && !self.motion.borrow().running) else {
             row.clip.set_visible(false);
             row.text.remove_css_class("unsung");
@@ -497,9 +503,9 @@ impl Overlay {
             self.window.add_css_class(POSITIONING);
             self.window.set_visible(true);
             self.lines.set_visible(true);
-            if self.rows[1].text().is_empty() {
-                self.rows[1].set_text("drag me");
-                self.rows[1].set_weight(1.0);
+            if self.rows[0].text().is_empty() {
+                self.rows[0].set_text("drag me");
+                self.rows[0].set_weight(1.0);
             }
         } else {
             self.window.remove_css_class(POSITIONING);
