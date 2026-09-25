@@ -40,6 +40,10 @@ pub struct Settings {
     pub upcoming_lines: u8,
     /// Fills the line word by word as the song moves through it.
     pub karaoke: bool,
+    /// Clears the overlay while the player is paused. Lyrics on screen with
+    /// nothing coming out of the speakers is the most confusing thing this
+    /// program can do.
+    pub hide_when_paused: bool,
     /// Lets the pointer reach the overlay, so it can be dragged. Off means
     /// clicks go straight through to whatever is underneath.
     pub movable: bool,
@@ -61,6 +65,7 @@ impl Default for Settings {
             background_opacity: 0.0,
             upcoming_lines: 0,
             karaoke: false,
+            hide_when_paused: true,
             movable: false,
             offsets: BTreeMap::new(),
         }

@@ -10,6 +10,7 @@ use lyricslens::app::{self, Update};
 use lyricslens::lyrics::Lyrics;
 use lyricslens::media::{Event, Track};
 use lyricslens::store::settings::Settings;
+use lyricslens::sync::Playback;
 use lyricslens::sync::clock::Clock;
 use lyricslens::ui::overlay::Overlay;
 use lyricslens::ui::settings as preferences;
@@ -230,6 +231,7 @@ struct State {
     track: Track,
     lyrics: Option<Lyrics>,
     clock: Clock,
+    playing: bool,
     stalled: bool,
     /// True between a track change and the answer about its lyrics, so the
     /// overlay can tell "still looking" from "there are none".
@@ -243,6 +245,7 @@ impl State {
             track: Track::default(),
             lyrics: None,
             clock: Clock::new(0),
+            playing: false,
             stalled: false,
             searching: false,
         }
@@ -258,6 +261,9 @@ impl State {
             Update::Media(Event::TrackChanged(track)) => {
                 // An empty track means no player at all, so there is nothing
                 // to look up and nothing to wait for.
+                if track.is_empty() {
+                    self.playing = false;
+                }
                 self.searching = !track.is_empty();
                 self.track = track;
                 self.lyrics = None;
@@ -265,6 +271,7 @@ impl State {
                 self.clock.reset();
             }
             Update::Media(Event::Playback(state)) => {
+                self.playing = state == Playback::Playing;
                 self.stalled = false;
                 self.clock.playback(state, Instant::now());
             }
@@ -302,6 +309,9 @@ impl State {
     /// staying blank — a blank overlay and a broken one look identical.
     fn line(&self) -> Option<String> {
         if self.track.is_empty() {
+            return None;
+        }
+        if self.settings.hide_when_paused && !self.playing {
             return None;
         }
 
