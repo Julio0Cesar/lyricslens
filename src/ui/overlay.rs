@@ -279,17 +279,6 @@ impl Overlay {
         lines.add_css_class("lines");
         lines.append(&viewport);
 
-        // Always something to draw. A window whose content goes away entirely
-        // sends no new frame, and the compositor keeps showing the last one —
-        // the line stayed on screen long after the program had stopped drawing
-        // it. One transparent pixel is enough to keep the frames coming.
-        let pixel = gtk::Box::builder()
-            .width_request(1)
-            .height_request(1)
-            .opacity(0.0)
-            .build();
-        lines.append(&pixel);
-
         let window = ApplicationWindow::builder()
             .application(app)
             .default_width(900)
@@ -406,17 +395,26 @@ impl Overlay {
         // long after the program had stopped drawing it. Opacity always
         // redraws.
         let anything = !wanted[0].is_empty() && !self.hidden.get();
-        self.lines.set_visible(true);
         self.viewport.set_visible(anything);
-        // The strip is part of the line; with no words it is a dark bar for
-        // nothing.
-        if anything {
-            self.lines.add_css_class("lines");
-        } else {
-            self.lines.remove_css_class("lines");
-        }
         self.fit();
+        self.reveal(anything);
         self.motion.borrow_mut().shown = wanted.to_vec();
+    }
+
+    /// Puts the surface on screen, or takes it away.
+    ///
+    /// Hiding what is inside is not enough: a window with nothing left to draw
+    /// sends no new frame, and the compositor goes on showing the last one, so
+    /// the words stay up after the program has stopped drawing them. The
+    /// surface itself has to go.
+    fn reveal(&self, anything: bool) {
+        let show = anything || self.placement.borrow().positioning;
+        if !show {
+            self.window.set_visible(false);
+            return;
+        }
+        self.window.present();
+        self.set_click_through(!self.placement.borrow().positioning);
     }
 
     /// Sizes the window onto the column, and scrolls it to the line being
