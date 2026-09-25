@@ -1,0 +1,42 @@
+name: Tag
+
+# A merge that raises the version in Cargo.toml is a release. Without this the
+# version sits on main and `lyricslens --upgrade` keeps finding the old one,
+# because upgrading downloads the latest release, not the latest commit.
+on:
+  push:
+    branches: [main]
+    paths: ["Cargo.toml"]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    name: Tag the version on main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Tag, unless that version is already out
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          tag="v$version"
+
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "$tag already exists; nothing to do"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "LyricsLens $tag"
+          git push origin "$tag"
+
+          notes=$(git log --format='- %s' "$(git describe --tags --abbrev=0 "$tag^" 2>/dev/null || git rev-list --max-parents=0 HEAD)..$tag^" \
+            | grep -v '^- Merge ' || true)
+          gh release create "$tag" --title "$tag" --notes "${notes:-See the commits for what changed.}"
