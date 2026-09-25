@@ -4,13 +4,39 @@
 //! already behave, instead of a hand-built grid. It never touches the overlay,
 //! whose transparency libadwaita's own background would fight.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::time::Duration;
+
 use adw::prelude::*;
+use gtk::glib;
 use gtk4 as gtk;
 
+use crate::app::Request;
+use crate::lyrics::lrclib::Candidate;
+use crate::lyrics::normalize::from_track;
+use crate::media::Track;
 use crate::store::settings::Settings;
+
+/// What the window needs to look lyrics up and hand a choice back.
+///
+/// Absent when the preferences were opened on their own, with no overlay
+/// running: there is nothing playing to correct.
+#[derive(Clone)]
+pub struct Search {
+    pub requests: async_channel::Sender<Request>,
+    pub candidates: async_channel::Receiver<Vec<Candidate>>,
+    pub playing: Rc<RefCell<Track>>,
+}
 
 /// Opens the preferences window, saving each change as it is made.
 pub fn open(app: &adw::Application) {
+    show(app, None);
+}
+
+/// Opens the preferences, with the means to correct the lyrics when there is a
+/// track playing to correct them for.
+pub fn show(app: &adw::Application, search: Option<Search>) {
     let settings = std::rc::Rc::new(std::cell::RefCell::new(Settings::load()));
 
     let window = adw::PreferencesWindow::builder()
@@ -262,6 +288,9 @@ pub fn open(app: &adw::Application) {
     close.add(&quit);
 
     page.add(&player);
+    if let Some(search) = search {
+        page.add(&lyrics_group(&search));
+    }
     page.add(&look);
     page.add(&place);
     page.add(&timing);
@@ -277,6 +306,157 @@ fn save(settings: &Settings, app: &adw::Application) {
         return;
     }
     app.activate_action("reload", None);
+}
+
+/// The rescue for when the automatic match lands on the wrong recording.
+///
+/// Type a name, see everything the service has under it, pick one. The choice
+/// is kept for the track playing now, so the same song comes back right.
+fn lyrics_group(search: &Search) -> adw::PreferencesGroup {
+    let group = adw::PreferencesGroup::builder()
+        .title("Lyrics for this track")
+        .description("When the wrong words are on screen, find the right ones by hand.")
+        .build();
+
+    let query = from_track(&search.playing.borrow());
+    let artist = adw::EntryRow::builder()
+        .title("Artist")
+        .text(query.artist.unwrap_or_default())
+        .build();
+    let title = adw::EntryRow::builder()
+        .title("Title")
+        .text(query.title)
+        .build();
+
+    let results = gtk::ListBox::builder()
+        .selection_mode(gtk::SelectionMode::None)
+        .visible(false)
+        .build();
+    results.add_css_class("boxed-list");
+
+    let status = gtk::Label::builder()
+        .label("")
+        .halign(gtk::Align::Start)
+        .visible(false)
+        .build();
+    status.add_css_class("dim-label");
+
+    let button = gtk::Button::builder()
+        .label("Search")
+        .halign(gtk::Align::End)
+        .margin_top(6)
+        .build();
+    button.add_css_class("suggested-action");
+    button.connect_clicked({
+        let search = search.clone();
+        let artist = artist.clone();
+        let title = title.clone();
+        let results = results.clone();
+        let status = status.clone();
+        move |button| {
+            let title_text = title.text().trim().to_owned();
+            if title_text.is_empty() {
+                status.set_label("A title is the least it needs.");
+                status.set_visible(true);
+                return;
+            }
+
+            button.set_sensitive(false);
+            status.set_label("Searching…");
+            status.set_visible(true);
+            results.set_visible(false);
+
+            let request = Request::Search {
+                artist: artist.text().trim().to_owned(),
+                title: title_text,
+            };
+            let search = search.clone();
+            let results = results.clone();
+            let status = status.clone();
+            let button = button.clone();
+            glib::spawn_future_local(async move {
+                if search.requests.send(request).await.is_err() {
+                    status.set_label("The overlay is not running.");
+                    button.set_sensitive(true);
+                    return;
+                }
+                let Ok(found) = search.candidates.recv().await else {
+                    button.set_sensitive(true);
+                    return;
+                };
+                fill(&results, &status, &search, found);
+                button.set_sensitive(true);
+            });
+        }
+    });
+
+    group.add(&artist);
+    group.add(&title);
+    group.add(&button);
+    group.add(&status);
+    group.add(&results);
+    group
+}
+
+/// Draws the answer, one row per recording.
+fn fill(results: &gtk::ListBox, status: &gtk::Label, search: &Search, found: Vec<Candidate>) {
+    while let Some(row) = results.first_child() {
+        results.remove(&row);
+    }
+
+    if found.is_empty() {
+        status.set_label("Nothing found under that name.");
+        status.set_visible(true);
+        results.set_visible(false);
+        return;
+    }
+
+    status.set_label(&format!("{} with synced lyrics.", found.len()));
+    status.set_visible(true);
+
+    for candidate in found {
+        let row = adw::ActionRow::builder()
+            .title(glib::markup_escape_text(&candidate.title))
+            .subtitle(glib::markup_escape_text(&format!(
+                "{}{} · {}",
+                candidate.artist,
+                if candidate.album.is_empty() {
+                    String::new()
+                } else {
+                    format!(" — {}", candidate.album)
+                },
+                length(candidate.length),
+            )))
+            .activatable(true)
+            .build();
+        row.connect_activated({
+            let search = search.clone();
+            let candidate = candidate.clone();
+            move |row| {
+                let search = search.clone();
+                let candidate = candidate.clone();
+                row.set_subtitle("Now showing these");
+                glib::spawn_future_local(async move {
+                    let _ = search
+                        .requests
+                        .send(Request::Choose(Box::new(candidate)))
+                        .await;
+                });
+            }
+        });
+        results.append(&row);
+    }
+    results.set_visible(true);
+}
+
+fn length(length: Option<Duration>) -> String {
+    match length {
+        Some(length) => {
+            let seconds = length.as_secs();
+            format!("{}:{:02}", seconds / 60, seconds % 60)
+        }
+        None => "--:--".to_owned(),
+    }
 }
 
 /// The names of the screens attached right now.
