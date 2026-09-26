@@ -87,15 +87,27 @@ cargo install --path .
 
 </details>
 
-It needs GTK4, libadwaita and gtk4-layer-shell, which most desktops already
-have. On Arch: `gtk4 libadwaita gtk4-layer-shell`. On Debian and Ubuntu:
-`libgtk-4-1 libadwaita-1-0 libgtk4-layer-shell0`.
+## What it needs to run
 
-The published binary is built against a current glibc, so a distribution more
-than a release or two behind cannot run it. `install.sh` checks before
-downloading and says so. Each release publishes the exact version it needs as
-`MINIMUM_GLIBC`, and building from source works on anything that can build
-GTK4.
+| | At least |
+|---|---|
+| glibc | 2.39 |
+| GTK | 4.12 |
+| libadwaita | 1.5 |
+
+Which means Ubuntu 24.04, Debian 13, Fedora 40, openSUSE Tumbleweed or Arch, and
+anything newer. gtk4-layer-shell is built into the published binary, so there
+is nothing to install for it.
+
+Older than that, build from source: it works against anything that can build
+GTK 4.12, whatever glibc is underneath. `install.sh` reads the exact glibc
+each release needs from its `MINIMUM_GLIBC` file and stops before downloading
+a binary this machine could not run.
+
+Building from source needs the development packages. On Arch: `gtk4
+libadwaita gtk4-layer-shell`. On Debian and Ubuntu: `libgtk-4-dev
+libadwaita-1-dev`, and gtk4-layer-shell from its own source on Ubuntu before
+25.10, which does not package it.
 
 ## Use
 

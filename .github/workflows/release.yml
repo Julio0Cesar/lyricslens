@@ -25,10 +25,16 @@ on:
 permissions:
   contents: write
 
+env:
+  LAYER_SHELL: 1.1.0
+
 jobs:
   build:
     name: Build and publish
-    runs-on: ubuntu-26.04
+    # The oldest runner whose GTK and libadwaita are new enough to build
+    # against. Everything the binary asks of the system is decided here: build
+    # it on a newer one and it stops running on anything older than that one.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,14 +45,36 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libgtk-4-dev \
-            libgtk4-layer-shell-dev \
             libadwaita-1-dev \
-            libx11-dev
+            libx11-dev \
+            libwayland-dev \
+            wayland-protocols \
+            meson \
+            ninja-build
+
+      # Ubuntu packaged this one for the first time in 25.10, and the build
+      # happens on 24.04. It is small, so it is built here and linked into the
+      # program: nothing to install alongside it, and one library fewer to be
+      # missing on the machine that runs it.
+      - name: Build gtk4-layer-shell into the program
+        run: |
+          curl -sSL "https://github.com/wmww/gtk4-layer-shell/archive/refs/tags/v$LAYER_SHELL.tar.gz" \
+            | tar -xz
+          cd "gtk4-layer-shell-$LAYER_SHELL"
+          meson setup build \
+            --prefix=/usr \
+            --default-library=static \
+            -Dexamples=false -Ddocs=false -Dtests=false \
+            -Dintrospection=false -Dvapi=false
+          ninja -C build
+          sudo ninja -C build install
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
       - name: Build
+        env:
+          SYSTEM_DEPS_GTK4_LAYER_SHELL_0_LINK: static
         run: cargo build --release --locked
 
       # Built from the same binary the archive carries, so the three ways of

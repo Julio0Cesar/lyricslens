@@ -35,11 +35,13 @@ zbus = { version = "5.19.0", default-features = false, features = ["tokio"] }
 
 # The .deb built on release. The runtime libraries are named so that
 # `apt install ./lyricslens.deb` pulls them in; `dpkg -i` never does.
+# gtk4-layer-shell is not among them: it is built into the binary, because
+# Ubuntu has no package for it at all.
 [package.metadata.deb]
 maintainer = "Julio Cesar <julio@byjuliocesa.dev>"
 section = "sound"
 priority = "optional"
-depends = "libgtk-4-1, libadwaita-1-0, libgtk4-layer-shell0, libx11-6"
+depends = "libgtk-4-1, libadwaita-1-0, libx11-6"
 extended-description = """
 Reads what your player is playing over MPRIS, finds the lyrics on LRCLIB and \
 draws the line being sung on a layer above every other window."""
@@ -70,4 +72,3 @@ assets = [
 [package.metadata.generate-rpm.requires]
 "libgtk-4.so.1()(64bit)" = "*"
 "libadwaita-1.so.0()(64bit)" = "*"
-"libgtk4-layer-shell.so.0()(64bit)" = "*"

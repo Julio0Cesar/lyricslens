@@ -44,16 +44,18 @@ esac
 
 # The libraries the binary links against are not bundled: they are the ones a
 # desktop already has, and bundling GTK would turn 16MB into 80MB.
+# gtk4-layer-shell is not in the list because it is built into the binary:
+# Ubuntu has no package for it before 25.10.
 missing=""
-for library in libgtk-4.so.1 libadwaita-1.so.0 libgtk4-layer-shell.so.0; do
+for library in libgtk-4.so.1 libadwaita-1.so.0; do
     if ! ldconfig -p 2>/dev/null | grep -q "$library"; then
         missing="$missing $library"
     fi
 done
 if [ -n "$missing" ]; then
     say "These libraries are missing:$missing"
-    say "On Arch:   sudo pacman -S gtk4 libadwaita gtk4-layer-shell"
-    say "On Debian: sudo apt install libgtk-4-1 libadwaita-1-0 libgtk4-layer-shell0"
+    say "On Arch:   sudo pacman -S gtk4 libadwaita"
+    say "On Debian: sudo apt install libgtk-4-1 libadwaita-1-0"
     die "install them and run this again"
 fi
 
