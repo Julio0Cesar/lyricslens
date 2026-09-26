@@ -10,8 +10,9 @@
 //! at a program that has been removed.
 //!
 //! Hyprland stopped taking `hyprctl keyword` in 0.56, where the configuration
-//! moved to Lua; asking fails there, and the preferences window offers the
-//! line to paste instead.
+//! moved to Lua. It answers `keyword can't work with non-legacy parsers. Use
+//! eval.` — and it means it: the same request through `hyprctl eval` is taken.
+//! Both are tried, newest first, so one build covers either version.
 
 use std::process::Command;
 
@@ -48,48 +49,89 @@ pub fn bind(combination: &str, flag: &str) -> Result<(), String> {
         .map_err(|error| format!("could not find my own binary: {error}"))?
         .display()
         .to_string();
+    let (modifiers, key) = split(combination)?;
+    let run = format!("{} {flag}", shell_quote(&program));
 
-    let (command, arguments) = match compositor() {
-        Compositor::Hyprland => {
-            let (modifiers, key) = split(combination)?;
-            (
-                "hyprctl",
-                vec![
-                    "keyword".to_owned(),
-                    "bind".to_owned(),
-                    format!("{modifiers},{key},exec,{program} {flag}"),
-                ],
-            )
-        }
+    match compositor() {
+        Compositor::Hyprland => hyprland(&modifiers, &key, &run),
         Compositor::Sway => {
-            let (modifiers, key) = split(combination)?;
-            (
+            let said = talk(
                 "swaymsg",
-                vec![
+                &[
                     "bindsym".to_owned(),
                     sway_keys(&modifiers, &key),
                     "exec".to_owned(),
-                    format!("{program} {flag}"),
+                    run,
                 ],
-            )
+            )?;
+            // swaymsg answers with JSON and a zero exit code either way.
+            if said.replace(' ', "").contains("\"success\":false") {
+                return Err(format!("swaymsg refused: {said}"));
+            }
+            Ok(())
         }
         Compositor::Unknown => {
-            return Err("this desktop has no way to be asked; bind the key yourself".to_owned());
+            Err("this desktop has no way to be asked; bind the key yourself".to_owned())
         }
-    };
-
-    let output = Command::new(command)
-        .args(&arguments)
-        .output()
-        .map_err(|error| format!("{command} could not be run: {error}"))?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "{command} refused: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
     }
-    Ok(())
+}
+
+/// Asks Hyprland, through whichever of its two doors is open.
+///
+/// The binding is dropped before it is made: nothing is written down, so a
+/// restart of this program would otherwise leave two bindings on one key and
+/// the overlay would be shown and hidden again by a single press.
+fn hyprland(modifiers: &str, key: &str, run: &str) -> Result<(), String> {
+    let combination = lua_keys(modifiers, key);
+    let dropped = format!(r#"hl.unbind("{}")"#, lua_quote(&combination));
+    // Nothing was bound yet on the first run, and that is not a failure.
+    let _ = hyprctl(&["eval".to_owned(), dropped]);
+
+    let asked = format!(
+        r#"hl.bind("{}", hl.dsp.exec_cmd("{}"))"#,
+        lua_quote(&combination),
+        lua_quote(run)
+    );
+    match hyprctl(&["eval".to_owned(), asked]) {
+        Ok(()) => Ok(()),
+        // Before 0.56 there was no evaluator, and `keyword` was the way.
+        Err(error) => {
+            tracing::debug!(%error, "the evaluator would not take it; trying the older way");
+            hyprctl(&[
+                "keyword".to_owned(),
+                "bind".to_owned(),
+                format!("{modifiers},{key},exec,{run}"),
+            ])
+        }
+    }
+}
+
+/// `hyprctl` says `ok` when it did what was asked, and anything else when it
+/// did not — including with a zero exit code, which is how a refused binding
+/// used to pass for a working one.
+fn hyprctl(arguments: &[String]) -> Result<(), String> {
+    let said = talk("hyprctl", arguments)?;
+    if said.trim().eq_ignore_ascii_case("ok") {
+        return Ok(());
+    }
+    Err(format!("hyprctl refused: {}", said.trim()))
+}
+
+/// Runs the control program and hands back everything it said.
+fn talk(program: &str, arguments: &[String]) -> Result<String, String> {
+    let output = Command::new(program)
+        .args(arguments)
+        .output()
+        .map_err(|error| format!("{program} could not be run: {error}"))?;
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if !output.status.success() {
+        return Err(format!("{program} refused: {}", said.trim()));
+    }
+    Ok(said)
 }
 
 /// The line to put in a configuration file, for a desktop that will not be
@@ -104,19 +146,30 @@ pub fn snippet(combination: &str, flag: &str) -> String {
         combination.trim()
     };
 
+    let (modifiers, key) = split(combination).unwrap_or_default();
+    let run = format!("{} {flag}", shell_quote(&program));
+
     match compositor() {
-        Compositor::Sway => {
-            let (modifiers, key) = split(combination).unwrap_or_default();
-            format!(
-                "bindsym {} exec {program} {flag}",
-                sway_keys(&modifiers, &key)
-            )
-        }
-        _ => {
-            let (modifiers, key) = split(combination).unwrap_or_default();
-            format!("bind = {modifiers}, {key}, exec, {program} {flag}")
-        }
+        Compositor::Sway => format!("bindsym {} exec {run}", sway_keys(&modifiers, &key)),
+        // Two configuration languages, and a line in the wrong one does
+        // nothing at all. Which file is there says which one this is.
+        Compositor::Hyprland if lua_config() => format!(
+            r#"hl.bind("{}", hl.dsp.exec_cmd("{}"))"#,
+            lua_quote(&lua_keys(&modifiers, &key)),
+            lua_quote(&run)
+        ),
+        _ => format!("bind = {modifiers}, {key}, exec, {run}"),
     }
+}
+
+/// True where Hyprland is configured in Lua, which it has been since 0.56.
+fn lua_config() -> bool {
+    let Some(home) = std::env::var_os("HOME") else {
+        return false;
+    };
+    std::path::Path::new(&home)
+        .join(".config/hypr/hyprland.lua")
+        .is_file()
 }
 
 /// `SUPER SHIFT, L` into its two halves.
@@ -129,6 +182,25 @@ fn split(combination: &str) -> Result<(String, String), String> {
         // A key on its own is allowed, with no modifier.
         None => Ok((String::new(), combination.to_owned())),
     }
+}
+
+/// Hyprland's Lua spells a combination out with spaces around the plus.
+fn lua_keys(modifiers: &str, key: &str) -> String {
+    let mut parts: Vec<&str> = modifiers.split_whitespace().collect();
+    if !key.is_empty() {
+        parts.push(key);
+    }
+    parts.join(" + ")
+}
+
+/// A string safe to drop inside Lua double quotes.
+fn lua_quote(text: &str) -> String {
+    text.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// A path safe to hand to the shell the compositor runs the command with.
+fn shell_quote(path: &str) -> String {
+    format!("'{}'", path.replace('\'', r"'\''"))
 }
 
 /// Sway spells the modifiers differently and joins them with a plus.
@@ -166,6 +238,22 @@ mod tests {
         let (modifiers, key) = split("F9").expect("a valid combination");
         assert!(modifiers.is_empty());
         assert_eq!(key, "F9");
+    }
+
+    #[test]
+    fn hyprlands_lua_spells_a_combination_with_spaces() {
+        assert_eq!(lua_keys("SUPER SHIFT", "L"), "SUPER + SHIFT + L");
+        assert_eq!(lua_keys("", "F9"), "F9");
+    }
+
+    #[test]
+    fn quotes_and_backslashes_survive_the_trip_into_lua() {
+        assert_eq!(lua_quote(r#"a"b\c"#), r#"a\"b\\c"#);
+    }
+
+    #[test]
+    fn a_path_with_a_space_stays_one_argument() {
+        assert_eq!(shell_quote("/my apps/lyricslens"), "'/my apps/lyricslens'");
     }
 
     #[test]

@@ -131,9 +131,14 @@ use `lyricslens --quit` or the preferences window.
 ### A key to hide it
 
 Wayland gives an ordinary program no way to claim a key combination, so the
-binding belongs to your compositor. The preferences window writes the line for
-you — type the combination under *Keys* and copy what it shows. On Hyprland it
-goes in `hyprland.conf`:
+binding belongs to your compositor. On Hyprland and Sway it is asked for
+directly: type the combination under *Keys* and it works straight away.
+Nothing is written to your configuration, so there is nothing to undo — the
+compositor forgets the binding when it restarts, and this asks again when it
+starts.
+
+Anywhere else, the preferences window shows the line to paste into your own
+configuration, in the language your compositor reads:
 
 ```conf
 bind = SUPER, L, exec, lyricslens --toggle
