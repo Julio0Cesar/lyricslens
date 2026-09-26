@@ -449,6 +449,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
         move |row| {
             settings.borrow_mut().hotkey_toggle = row.text().trim().to_owned();
             save(&settings.borrow(), &app);
+            ask_for(&settings.borrow().hotkey_toggle, "--toggle");
         }
     });
     keys.add(&toggle_key);
@@ -463,6 +464,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
         move |row| {
             settings.borrow_mut().hotkey_position = row.text().trim().to_owned();
             save(&settings.borrow(), &app);
+            ask_for(&settings.borrow().hotkey_position, "--position");
         }
     });
     keys.add(&position_key);
@@ -470,7 +472,7 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     let keys_note = gtk::Label::builder()
         .label(
             "Written the way Hyprland writes it, for example SUPER SHIFT, L. \
-             Takes effect the next time the program starts.",
+             Asked for as soon as you finish typing it.",
         )
         .wrap(true)
         .xalign(0.0)
@@ -479,8 +481,8 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     keys_note.add_css_class("dim-label");
     keys.add(&keys_note);
 
-    // Hyprland stopped taking the request in 0.56, so the line to paste is
-    // offered whatever the desktop: it is the one thing that always works.
+    // Offered whatever the desktop, for the ones that cannot be asked and for
+    // anyone who would rather have the binding survive a restart.
     let line = adw::ActionRow::builder()
         .title("Line for your configuration")
         .subtitle(crate::desktop::snippet(
@@ -506,6 +508,18 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     });
     line.add_suffix(&copy);
     keys.add(&line);
+
+    // The line is only useful if it says the combination in the box.
+    toggle_key.connect_changed({
+        let settings = settings.clone();
+        let line = line.clone();
+        move |_| {
+            line.set_subtitle(&crate::desktop::snippet(
+                &settings.borrow().hotkey_toggle,
+                "--toggle",
+            ));
+        }
+    });
 
     let start = Section::new(
         &t("Starting"),
@@ -577,6 +591,18 @@ fn save(settings: &Settings, app: &adw::Application) {
         return;
     }
     app.activate_action("reload", None);
+}
+
+/// Asks the compositor for a combination as soon as it is typed, so it works
+/// without restarting anything.
+///
+/// A half-typed combination is refused, and that is the usual case here: every
+/// keystroke in the box comes through. Nothing is said about it, because the
+/// next keystroke may well finish it.
+fn ask_for(combination: &str, flag: &str) {
+    if let Err(error) = crate::desktop::bind(combination, flag) {
+        tracing::debug!(%error, combination, flag, "the key was not taken");
+    }
 }
 
 /// A heading with a chevron, and the rows it hides.
