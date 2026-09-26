@@ -264,6 +264,38 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     });
     look.add(&dim);
 
+    let track = adw::SwitchRow::builder()
+        .title(t("Track name"))
+        .subtitle(t("Who is playing what, above the lyrics"))
+        .active(settings.borrow().show_track)
+        .build();
+    track.connect_active_notify({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            settings.borrow_mut().show_track = row.is_active();
+            save(&settings.borrow(), &app);
+        }
+    });
+    look.add(&track);
+
+    let elapsed = adw::SwitchRow::builder()
+        .title(t("Progress"))
+        .subtitle(t(
+            "A thin bar under the lyrics. Needs a player that reports the length",
+        ))
+        .active(settings.borrow().show_progress)
+        .build();
+    elapsed.connect_active_notify({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            settings.borrow_mut().show_progress = row.is_active();
+            save(&settings.borrow(), &app);
+        }
+    });
+    look.add(&elapsed);
+
     let previous = adw::SwitchRow::builder()
         .title(t("Line just sung"))
         .subtitle("Kept above the current one, dimmed")

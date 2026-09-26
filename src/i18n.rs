@@ -111,6 +111,16 @@ const PORTUGUESE: &[(&str, &str)] = &[
         "Per cent. Zero shows nothing behind the words",
         "Em por cento. Zero não mostra nada atrás das palavras",
     ),
+    ("Track name", "Nome da faixa"),
+    (
+        "Who is playing what, above the lyrics",
+        "Quem toca o quê, acima da letra",
+    ),
+    ("Progress", "Progresso"),
+    (
+        "A thin bar under the lyrics. Needs a player that reports the length",
+        "Uma barra fina sob a letra. Precisa de um player que informe a duração",
+    ),
     ("Line just sung", "Linha recém-cantada"),
     (
         "Kept above the current one, dimmed",

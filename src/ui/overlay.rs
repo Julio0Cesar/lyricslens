@@ -82,6 +82,23 @@ fn style(settings: &Settings) -> String {
              border-radius: 14px;
          }}
          window.{OVERLAY} .pixel {{ background: rgba(0, 0, 0, 0.01); }}
+         window.{OVERLAY} label.track {{
+             font-size: {small}px;
+             font-weight: 400;
+             opacity: 0.6;
+             margin-bottom: 4px;
+         }}
+         window.{OVERLAY} progressbar.elapsed {{ margin-top: 8px; }}
+         window.{OVERLAY} progressbar.elapsed trough {{
+             min-height: 3px;
+             border-radius: 3px;
+             background: rgba(255, 255, 255, 0.18);
+         }}
+         window.{OVERLAY} progressbar.elapsed progress {{
+             min-height: 3px;
+             border-radius: 3px;
+             background: {color};
+         }}
          window.{OVERLAY} label {{
              color: {color};
              font-size: {size}px;
@@ -92,6 +109,7 @@ fn style(settings: &Settings) -> String {
         color = settings.text_color,
         size = settings.font_size,
         weight = settings.font_weight.clamp(100, 900),
+        small = (settings.font_size * 6 / 10).max(10),
     )
 }
 
@@ -230,6 +248,8 @@ pub struct Overlay {
     viewport: gtk::ScrolledWindow,
     column: gtk::Box,
     rows: Vec<Row>,
+    track: Label,
+    elapsed: gtk::ProgressBar,
     provider: CssProvider,
     motion: Rc<RefCell<Motion>>,
     /// Which row is the one being sung. One when the line before it is shown,
@@ -299,6 +319,22 @@ impl Overlay {
             .propagate_natural_width(true)
             .build();
 
+        // What is playing, and how far in. Both off unless asked for: the
+        // lyrics are what the overlay is for.
+        let track = Label::builder()
+            .justify(gtk::Justification::Center)
+            .halign(gtk::Align::Center)
+            .ellipsize(gtk::pango::EllipsizeMode::End)
+            .visible(false)
+            .build();
+        track.add_css_class("track");
+
+        let elapsed = gtk::ProgressBar::builder()
+            .valign(gtk::Align::Center)
+            .visible(false)
+            .build();
+        elapsed.add_css_class("elapsed");
+
         let lines = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .halign(gtk::Align::Center)
@@ -306,7 +342,9 @@ impl Overlay {
             .visible(false)
             .build();
         lines.add_css_class("lines");
+        lines.append(&track);
         lines.append(&viewport);
+        lines.append(&elapsed);
 
         // The strip goes away with the words, and something has to stay
         // behind it: a window with nothing left to draw sends no new frame,
@@ -361,6 +399,8 @@ impl Overlay {
             viewport,
             column,
             rows,
+            track,
+            elapsed,
             provider,
             highlighted: Rc::new(Cell::new(0)),
             progress: Rc::new(Cell::new(0.0)),
@@ -543,6 +583,25 @@ impl Overlay {
             overlay.settle(&wanted);
             ControlFlow::Break
         });
+    }
+
+    /// Who is playing what, above the lyrics, and how far into it, below.
+    pub fn show_track(&self, name: Option<&str>, elapsed: Option<f64>) {
+        match name {
+            Some(name) => {
+                self.track.set_text(name);
+                self.track.set_visible(true);
+            }
+            None => self.track.set_visible(false),
+        }
+
+        match elapsed {
+            Some(fraction) => {
+                self.elapsed.set_fraction(fraction.clamp(0.0, 1.0));
+                self.elapsed.set_visible(true);
+            }
+            None => self.elapsed.set_visible(false),
+        }
     }
 
     /// How far through the line the song is, from 0 to 1.

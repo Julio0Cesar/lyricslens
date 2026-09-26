@@ -50,6 +50,10 @@ pub struct Settings {
     /// How dark the strip behind the line is, from 0 for nothing to 1 for
     /// solid black. Anything above zero also rounds its corners.
     pub background_opacity: f64,
+    /// Shows who is playing and what, above the lyrics.
+    pub show_track: bool,
+    /// Shows how far into the song it is, as a thin bar under the lyrics.
+    pub show_progress: bool,
     /// Shows the line just sung above the current one, dimmed.
     pub previous_line: bool,
     /// How many lines still to come are shown under the current one, dimmed.
@@ -87,6 +91,8 @@ impl Default for Settings {
             text_color: "#ffffff".to_owned(),
             text_shadow: true,
             background_opacity: 0.0,
+            show_track: false,
+            show_progress: false,
             previous_line: false,
             upcoming_lines: 0,
             karaoke: false,
