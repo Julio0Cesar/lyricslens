@@ -88,6 +88,12 @@ It needs GTK4, libadwaita and gtk4-layer-shell, which most desktops already
 have. On Arch: `gtk4 libadwaita gtk4-layer-shell`. On Debian and Ubuntu:
 `libgtk-4-1 libadwaita-1-0 libgtk4-layer-shell0`.
 
+The published binary is built against a current glibc, so a distribution more
+than a release or two behind cannot run it. `install.sh` checks before
+downloading and says so. Each release publishes the exact version it needs as
+`MINIMUM_GLIBC`, and building from source works on anything that can build
+GTK4.
+
 ## Use
 
 ```bash
