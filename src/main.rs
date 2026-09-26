@@ -196,6 +196,8 @@ fn main() -> glib::ExitCode {
                 &state.upcoming(),
             );
             overlay.show_progress(state.progress());
+            let (name, elapsed) = state.now_playing();
+            overlay.show_track(name.as_deref(), elapsed);
             glib::ControlFlow::Continue
         });
     });
@@ -381,6 +383,39 @@ impl State {
                 *self.newer.borrow_mut() = Some(version);
             }
         }
+    }
+
+    /// What is playing and how far into it, for the two things the overlay
+    /// can show around the lyrics.
+    fn now_playing(&self) -> (Option<String>, Option<f64>) {
+        if self.track.is_empty() {
+            return (None, None);
+        }
+
+        let name = self.settings.show_track.then(|| {
+            let title = self.title();
+            if self.track.artists.is_empty() {
+                title
+            } else {
+                format!("{}  —  {title}", self.track.artists.join(", "))
+            }
+        });
+
+        // Needs a length to be a fraction of, which a browser often does not
+        // give.
+        let elapsed = self
+            .settings
+            .show_progress
+            .then(|| self.elapsed())
+            .flatten();
+
+        (name, elapsed)
+    }
+
+    fn elapsed(&self) -> Option<f64> {
+        let position = self.clock.position(Instant::now())?;
+        let length = self.track.length?.as_secs_f64();
+        (length > 0.0).then(|| position.as_secs_f64() / length)
     }
 
     /// How far through the current line the song is.
