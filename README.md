@@ -212,6 +212,11 @@ Two decisions carry the rest, and both came from measurement:
   place, claiming a key — a program cannot do any of that by itself. It all
   goes through the compositor.
 
+## Language
+
+The preferences window, the tray menu and what the overlay says follow your
+session: Portuguese when `LANG` asks for it, English otherwise.
+
 ## Where it keeps things
 
 | Path | What |

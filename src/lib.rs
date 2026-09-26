@@ -7,6 +7,7 @@ pub mod app;
 pub mod cli;
 pub mod desktop;
 pub mod error;
+pub mod i18n;
 pub mod log;
 pub mod lyrics;
 pub mod media;
