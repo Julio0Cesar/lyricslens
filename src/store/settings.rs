@@ -54,6 +54,9 @@ pub struct Settings {
     pub show_track: bool,
     /// Shows how far into the song it is, as a thin bar under the lyrics.
     pub show_progress: bool,
+    /// Shows the album cover beside the lyrics, from the player when it offers
+    /// one and from a lookup when it does not.
+    pub show_art: bool,
     /// Shows the line just sung above the current one, dimmed.
     pub previous_line: bool,
     /// How many lines still to come are shown under the current one, dimmed.
@@ -93,6 +96,7 @@ impl Default for Settings {
             background_opacity: 0.0,
             show_track: false,
             show_progress: false,
+            show_art: false,
             previous_line: false,
             upcoming_lines: 0,
             karaoke: false,

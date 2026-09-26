@@ -4,6 +4,7 @@
 //! integration tests drive.
 
 pub mod app;
+pub mod art;
 pub mod cli;
 pub mod desktop;
 pub mod error;

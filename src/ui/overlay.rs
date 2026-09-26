@@ -9,6 +9,7 @@
 //! while that same widget grows into place and the one above it leaves.
 
 use std::cell::{Cell, RefCell};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -87,6 +88,10 @@ fn style(settings: &Settings) -> String {
              font-weight: 400;
              opacity: 0.6;
              margin-bottom: 4px;
+         }}
+         window.{OVERLAY} picture.art {{
+             border-radius: 8px;
+             margin-right: 14px;
          }}
          window.{OVERLAY} progressbar.elapsed {{ margin-top: 8px; }}
          window.{OVERLAY} progressbar.elapsed trough {{
@@ -250,6 +255,10 @@ pub struct Overlay {
     rows: Vec<Row>,
     track: Label,
     elapsed: gtk::ProgressBar,
+    art: gtk::Picture,
+    /// The cover already on screen, so the same file is not decoded on every
+    /// tick.
+    showing: Rc<RefCell<Option<PathBuf>>>,
     provider: CssProvider,
     motion: Rc<RefCell<Motion>>,
     /// Which row is the one being sung. One when the line before it is shown,
@@ -335,16 +344,35 @@ impl Overlay {
             .build();
         elapsed.add_css_class("elapsed");
 
-        let lines = gtk::Box::builder()
+        let words = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
+            .halign(gtk::Align::Center)
+            .valign(gtk::Align::Center)
+            .build();
+        words.append(&track);
+        words.append(&viewport);
+        words.append(&elapsed);
+
+        // Square, cropped rather than squashed: covers are square, and the
+        // ones that are not would otherwise stretch a face sideways.
+        let art = gtk::Picture::builder()
+            .content_fit(gtk::ContentFit::Cover)
+            .valign(gtk::Align::Center)
+            .visible(false)
+            .build();
+        art.add_css_class("art");
+        // CSS rounds the corners; this is what makes the picture stop at them.
+        art.set_overflow(gtk::Overflow::Hidden);
+
+        let lines = gtk::Box::builder()
+            .orientation(gtk::Orientation::Horizontal)
             .halign(gtk::Align::Center)
             .valign(gtk::Align::End)
             .visible(false)
             .build();
         lines.add_css_class("lines");
-        lines.append(&track);
-        lines.append(&viewport);
-        lines.append(&elapsed);
+        lines.append(&art);
+        lines.append(&words);
 
         // The strip goes away with the words, and something has to stay
         // behind it: a window with nothing left to draw sends no new frame,
@@ -401,6 +429,8 @@ impl Overlay {
             rows,
             track,
             elapsed,
+            art,
+            showing: Rc::new(RefCell::new(None)),
             provider,
             highlighted: Rc::new(Cell::new(0)),
             progress: Rc::new(Cell::new(0.0)),
@@ -482,6 +512,12 @@ impl Overlay {
         };
         self.lines.set_halign(align);
         self.column.set_halign(align);
+        // Tied to the text: a cover twice the height of a line sits level with
+        // it whatever size the words are.
+        let side = i32::try_from(settings.font_size * 2)
+            .unwrap_or(60)
+            .clamp(48, 160);
+        self.art.set_size_request(side, side);
         for row in &self.rows {
             row.align(align, justify, width);
         }
@@ -601,6 +637,34 @@ impl Overlay {
                 self.elapsed.set_visible(true);
             }
             None => self.elapsed.set_visible(false),
+        }
+    }
+
+    /// The cover beside the lyrics, or none.
+    ///
+    /// The file is decoded only when it is a different file: this runs on
+    /// every tick, and decoding a picture thirty times a second is the kind
+    /// of thing that makes an overlay stutter.
+    pub fn show_art(&self, path: Option<&Path>) {
+        if self.showing.borrow().as_deref() == path {
+            return;
+        }
+        *self.showing.borrow_mut() = path.map(Path::to_path_buf);
+
+        let Some(path) = path else {
+            self.art.set_visible(false);
+            return;
+        };
+
+        match gtk::gdk::Texture::from_filename(path) {
+            Ok(texture) => {
+                self.art.set_paintable(Some(&texture));
+                self.art.set_visible(true);
+            }
+            Err(error) => {
+                tracing::debug!(%error, path = %path.display(), "the cover would not decode");
+                self.art.set_visible(false);
+            }
         }
     }
 

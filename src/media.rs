@@ -36,10 +36,13 @@ pub struct Track {
     pub artists: Vec<String>,
     pub album: Option<String>,
     pub length: Option<Duration>,
+    /// Where the player says the cover is: a local file, an address, or
+    /// nothing at all, which is what a browser always says.
+    pub art_url: Option<String>,
 }
 
 impl Track {
-    /// Reads the four fields the overlay needs out of `org.mpris.MediaPlayer2.Player.Metadata`.
+    /// Reads the five fields the overlay needs out of `org.mpris.MediaPlayer2.Player.Metadata`.
     ///
     /// Anything missing, of the wrong type, or empty becomes `None` rather than
     /// an error: a player sending garbage should cost us one blank line, not a
@@ -53,6 +56,7 @@ impl Track {
                 .get("mpris:length")
                 .and_then(microseconds)
                 .map(Duration::from_micros),
+            art_url: text(metadata, "mpris:artUrl"),
         }
     }
 

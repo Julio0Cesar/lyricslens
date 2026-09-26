@@ -17,7 +17,7 @@ use crate::lyrics::Lyrics;
 const BASE: &str = "https://lrclib.net";
 
 /// Identifying the caller is the one thing the service asks for in return.
-const AGENT: &str = concat!(
+pub const AGENT: &str = concat!(
     "LyricsLens/",
     env!("CARGO_PKG_VERSION"),
     " (https://github.com/Julio0Cesar/lyricslens)"
