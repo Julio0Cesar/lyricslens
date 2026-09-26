@@ -57,6 +57,23 @@ if [ -n "$missing" ]; then
     die "install them and run this again"
 fi
 
+# The binary is not static: it is built against the libraries of the machine
+# that built it, and an older system cannot run it. Better to say so than to
+# hand over a download that dies on its first symbol.
+check_glibc() {
+    needed=$1
+    have=$(ldd --version 2>/dev/null | head -n 1 | grep -o '[0-9]\+\.[0-9]\+' | head -n 1)
+    [ -n "$have" ] || return 0
+
+    oldest=$(printf '%s\n%s\n' "$needed" "$have" | sort -V | head -n 1)
+    [ "$oldest" = "$needed" ] && return 0
+
+    say "This build needs glibc $needed and this system has $have."
+    say "Install the .deb or .rpm from the release instead, or build from"
+    say "source with: cargo install --git https://github.com/$REPO"
+    die "not installed"
+}
+
 TAG="${LYRICSLENS_VERSION:-}"
 if [ -z "$TAG" ]; then
     TAG=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
@@ -66,6 +83,9 @@ fi
 
 ARCHIVE="$NAME-$TAG-x86_64-linux.tar.gz"
 BASE="https://github.com/$REPO/releases/download/$TAG"
+
+needed=$(curl -fsSL "$BASE/MINIMUM_GLIBC" 2>/dev/null | tr -d '[:space:]')
+[ -n "$needed" ] && check_glibc "$needed"
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT INT TERM

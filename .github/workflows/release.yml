@@ -66,6 +66,16 @@ jobs:
           cp target/release/lyricslens "$dir/"
           cp packaging/icons/*.png "$dir/icons/"
           cp README.md LICENSE "$dir/"
+          # The oldest glibc this binary will run against, read from the
+          # binary itself. install.sh checks it before downloading, so a
+          # distribution too old to run it is told so instead of being handed
+          # a binary that dies on the first symbol.
+          objdump -T "target/release/lyricslens" \
+            | grep -o 'GLIBC_[0-9.]*' \
+            | sort -V -u \
+            | tail -n 1 \
+            | sed 's/GLIBC_//' > MINIMUM_GLIBC
+
           tar -czf "$dir.tar.gz" "$dir"/*
 
           # Named the way the release lists them, next to the archive.
@@ -85,7 +95,13 @@ jobs:
           tag="${{ steps.pack.outputs.tag }}"
           archive="${{ steps.pack.outputs.archive }}"
 
-          packages=("$archive" "lyricslens-$tag-x86_64.deb" "lyricslens-$tag-x86_64.rpm" SHA256SUMS)
+          packages=(
+            "$archive"
+            "lyricslens-$tag-x86_64.deb"
+            "lyricslens-$tag-x86_64.rpm"
+            SHA256SUMS
+            MINIMUM_GLIBC
+          )
 
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "${packages[@]}" --clobber
