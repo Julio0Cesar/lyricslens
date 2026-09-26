@@ -10,6 +10,7 @@ use std::time::Duration;
 use tokio::task::JoinHandle;
 use zbus::Connection;
 
+use crate::art::Art;
 use crate::error::Error;
 use crate::lyrics::lrclib::{Candidate, Client};
 use crate::lyrics::normalize::{Query, from_track};
@@ -47,6 +48,8 @@ pub enum Update {
     /// Boxed because it dwarfs every other variant, and a whole song would
     /// otherwise set the size of the channel's every message.
     Lyrics(Box<Option<Lyrics>>),
+    /// The cover for the track playing now, as a file on disk.
+    Art(Option<std::path::PathBuf>),
     /// The answer to a search, in the order the service returned it.
     Candidates(Vec<Candidate>),
     /// A release newer than this build exists. Nothing is installed by it.
@@ -150,7 +153,9 @@ async fn once(
     };
 
     let client = Client::new()?;
+    let art = Art::new().ok();
     let mut lookup: Option<JoinHandle<()>> = None;
+    let mut cover: Option<JoinHandle<()>> = None;
     let mut playing: Option<Track> = None;
 
     loop {
@@ -182,6 +187,13 @@ async fn once(
                 track.clone(),
                 updates.clone(),
             )));
+
+            if let Some(cover) = cover.take() {
+                cover.abort();
+            }
+            cover = art
+                .clone()
+                .map(|art| tokio::spawn(find_art(art, track.clone(), updates.clone())));
         }
 
         if updates.send(Update::Media(event)).await.is_err() {
@@ -192,6 +204,9 @@ async fn once(
     follower.abort();
     if let Some(lookup) = lookup {
         lookup.abort();
+    }
+    if let Some(cover) = cover {
+        cover.abort();
     }
     // The player left, or stopped talking. Either way there is nothing to sing
     // along to, and the last line must not sit there as if there were.
@@ -268,6 +283,16 @@ async fn fetch(client: Client, track: Track, updates: async_channel::Sender<Upda
     });
     report(&query, lyrics.as_ref());
     let _ = updates.send(Update::Lyrics(Box::new(lyrics))).await;
+}
+
+/// Looks the cover up on its own, so a slow picture never holds the words up.
+async fn find_art(art: Art, track: Track, updates: async_channel::Sender<Update>) {
+    let found = art.find(&track).await;
+    match &found {
+        Some(path) => tracing::debug!(path = %path.display(), "cover found"),
+        None => tracing::debug!("no cover for this one"),
+    }
+    let _ = updates.send(Update::Art(found)).await;
 }
 
 fn report(query: &Query, lyrics: Option<&Lyrics>) {

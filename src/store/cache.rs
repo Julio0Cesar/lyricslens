@@ -53,6 +53,17 @@ pub fn put(artist: &str, title: &str, length: Option<Duration>, lrc: &str) {
     }
 }
 
+/// Names a file after whatever identifies it, so the same thing lands on the
+/// same name every run.
+pub fn digest(parts: &[&[u8]]) -> String {
+    let mut hash = Fnv::new();
+    for part in parts {
+        hash.write(part);
+        hash.write(b"\0");
+    }
+    format!("{:016x}", hash.finish())
+}
+
 /// FNV-1a, 64 bits.
 ///
 /// The standard hasher is explicitly allowed to change between releases, and a

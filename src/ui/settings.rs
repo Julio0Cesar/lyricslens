@@ -296,6 +296,23 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
     });
     look.add(&elapsed);
 
+    let art = adw::SwitchRow::builder()
+        .title(t("Album art"))
+        .subtitle(t(
+            "Beside the lyrics. Looked up when the player offers none",
+        ))
+        .active(settings.borrow().show_art)
+        .build();
+    art.connect_active_notify({
+        let settings = settings.clone();
+        let app = app.clone();
+        move |row| {
+            settings.borrow_mut().show_art = row.is_active();
+            save(&settings.borrow(), &app);
+        }
+    });
+    look.add(&art);
+
     let previous = adw::SwitchRow::builder()
         .title(t("Line just sung"))
         .subtitle("Kept above the current one, dimmed")

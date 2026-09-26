@@ -198,6 +198,7 @@ fn main() -> glib::ExitCode {
             overlay.show_progress(state.progress());
             let (name, elapsed) = state.now_playing();
             overlay.show_track(name.as_deref(), elapsed);
+            overlay.show_art(state.art());
             glib::ControlFlow::Continue
         });
     });
@@ -314,6 +315,8 @@ struct State {
     /// True between a track change and the answer about its lyrics, so the
     /// overlay can tell "still looking" from "there are none".
     searching: bool,
+    /// The cover for what is playing, once it has been found.
+    art: Option<std::path::PathBuf>,
 }
 
 impl State {
@@ -333,6 +336,7 @@ impl State {
             playing: false,
             stalled: false,
             searching: false,
+            art: None,
         }
     }
 
@@ -364,6 +368,7 @@ impl State {
                 };
                 self.track = track;
                 self.lyrics = None;
+                self.art = None;
                 self.stalled = false;
                 self.clock.reset();
             }
@@ -379,6 +384,7 @@ impl State {
             // Answered straight to the window that asked; nothing here wants
             // a list of recordings.
             Update::Candidates(_) => {}
+            Update::Art(path) => self.art = path,
             Update::NewVersion(version) => {
                 *self.newer.borrow_mut() = Some(version);
             }
@@ -410,6 +416,14 @@ impl State {
             .flatten();
 
         (name, elapsed)
+    }
+
+    /// The cover to draw beside the lyrics, when there is one and it is wanted.
+    fn art(&self) -> Option<&std::path::Path> {
+        if self.track.is_empty() || !self.settings.show_art {
+            return None;
+        }
+        self.art.as_deref()
     }
 
     fn elapsed(&self) -> Option<f64> {
