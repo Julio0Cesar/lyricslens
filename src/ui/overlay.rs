@@ -44,6 +44,10 @@ const UNSUNG_ALPHA: u16 = 0x6000;
 /// The line being sung and three waiting. More is a wall of text.
 const ROWS: usize = 4;
 
+/// An input region bigger than any screen. Wayland clips it to the surface,
+/// which is the point: the size stops being something to get right.
+const EVERYTHING: i32 = 32_767;
+
 /// Marks the window while it is being moved, so there is something to grab.
 const POSITIONING: &str = "positioning";
 
@@ -779,8 +783,12 @@ impl Overlay {
             // An empty region means the surface wants no pointer events at all.
             surface.set_input_region(Some(&gtk::cairo::Region::create()));
         } else {
-            let (width, height) = (self.window.width(), self.window.height());
-            let whole = gtk::cairo::RectangleInt::new(0, 0, width.max(1), height.max(1));
+            // Not the window's own size, which is the trap here: this runs
+            // while the surface is still the small one it was before the
+            // positioning mode asked the compositor to grow it to the whole
+            // screen. A region that size covers the top-left corner and
+            // nothing else, and the lines — at the bottom — cannot be grabbed.
+            let whole = gtk::cairo::RectangleInt::new(0, 0, EVERYTHING, EVERYTHING);
             surface.set_input_region(Some(&gtk::cairo::Region::create_rectangle(&whole)));
         }
     }
