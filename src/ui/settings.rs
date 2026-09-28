@@ -130,7 +130,9 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
         let settings = settings.clone();
         let app = app.clone();
         move |row| {
-            settings.borrow_mut().bottom_margin = row.value() as i32;
+            settings
+                .borrow_mut()
+                .set_bottom_everywhere(row.value() as i32);
             save(&settings.borrow(), &app);
         }
     });

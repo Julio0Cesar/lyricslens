@@ -21,7 +21,7 @@ use gtk4 as gtk;
 use gtk4_layer_shell::{Edge, Layer, LayerShell};
 
 use crate::error::Error;
-use crate::store::settings::Settings;
+use crate::store::settings::{Position, Settings};
 
 mod x11;
 
@@ -454,6 +454,13 @@ impl Overlay {
         overlay.shape(settings);
         overlay.place();
         overlay.watch_drag();
+        // Placed again once there is a surface: which screen this is comes
+        // from the surface, and the position is kept per screen, so the first
+        // placement has nothing to look the position up by.
+        overlay.window.connect_map({
+            let overlay = overlay.clone();
+            move |_| overlay.place()
+        });
         overlay.window.present();
         // Only once the surface exists is there an input region to empty.
         overlay.set_click_through(true);
@@ -800,21 +807,21 @@ impl Overlay {
         drag.connect_drag_begin({
             let overlay = self.clone();
             move |_, _, _| {
+                let screen = overlay.screen();
                 let mut placement = overlay.placement.borrow_mut();
                 if !placement.positioning {
                     return;
                 }
-                let left = placement
-                    .settings
-                    .left_margin
-                    .unwrap_or_else(|| overlay.centred_left());
-                placement.grabbed = Some((left, placement.settings.bottom_margin));
+                let at = placement.settings.position_on(screen.as_deref());
+                let left = at.left.unwrap_or_else(|| overlay.centred_left());
+                placement.grabbed = Some((left, at.bottom));
             }
         });
 
         drag.connect_drag_update({
             let overlay = self.clone();
             move |_, x, y| {
+                let screen = overlay.screen();
                 {
                     let mut placement = overlay.placement.borrow_mut();
                     let Some((left, bottom)) = placement.grabbed else {
@@ -822,8 +829,11 @@ impl Overlay {
                     };
                     // Dragging down moves the lines down, which is a smaller
                     // distance from the bottom.
-                    placement.settings.left_margin = Some((left + x as i32).max(0));
-                    placement.settings.bottom_margin = (bottom - y as i32).max(0);
+                    let at = Position {
+                        left: Some((left + x as i32).max(0)),
+                        bottom: (bottom - y as i32).max(0),
+                    };
+                    placement.settings.set_position_on(screen.as_deref(), at);
                 }
                 overlay.place();
             }
@@ -841,12 +851,11 @@ impl Overlay {
 
     /// Puts the lines where the settings say.
     fn place(&self) {
+        let screen = self.screen();
         let placement = self.placement.borrow();
         let positioning = placement.positioning;
-        let (left, bottom) = (
-            placement.settings.left_margin,
-            placement.settings.bottom_margin,
-        );
+        let at = placement.settings.position_on(screen.as_deref());
+        let (left, bottom) = (at.left, at.bottom);
         drop(placement);
 
         if !self.layer_shell {
@@ -908,6 +917,21 @@ impl Overlay {
             }
         }
         tracing::warn!(%wanted, "no screen by that name; leaving it to the compositor");
+    }
+
+    /// The screen the overlay is on, by connector name.
+    ///
+    /// The chosen screen wins over the one the surface is on. They disagree
+    /// for a moment every time the program starts: the surface is mapped
+    /// wherever the compositor puts it and only then moved, and reading the
+    /// surface in between gives the position of the wrong screen.
+    fn screen(&self) -> Option<String> {
+        if let Some(wanted) = self.placement.borrow().settings.monitor.clone() {
+            return Some(wanted);
+        }
+        let surface = self.window.surface()?;
+        let monitor = surface.display().monitor_at_surface(&surface)?;
+        monitor.connector().map(|name| name.to_string())
     }
 
     /// Where the lines sit when centred, so a drag can start from there.
