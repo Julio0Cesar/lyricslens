@@ -121,6 +121,9 @@ const PORTUGUESE: &[(&str, &str)] = &[
         "A thin bar under the lyrics. Needs a player that reports the length",
         "Uma barra fina sob a letra. Precisa de um player que informe a duração",
     ),
+    ("For this player", "Para este player"),
+    ("For this track only", "Só para esta faixa"),
+    ("Nothing playing", "Nada tocando"),
     ("Whole song…", "Letra inteira…"),
     ("Lyrics", "Letra"),
     (

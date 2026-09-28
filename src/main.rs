@@ -176,7 +176,11 @@ fn main() -> glib::ExitCode {
             move |_, _| {
                 let settings = Settings::load();
                 overlay.reload(&settings);
-                state.borrow_mut().settings = settings;
+                let mut state = state.borrow_mut();
+                state.settings = settings;
+                // The window may have just changed a correction, and the clock
+                // is the only thing that acts on one.
+                state.apply_offset();
             }
         });
         application.add_action(&reload);
@@ -343,6 +347,10 @@ struct State {
     art: Option<std::path::PathBuf>,
     /// What the window that lists the whole song reads.
     song: song::Feed,
+    /// The player being followed, by bus name. Kept because the correction to
+    /// apply is worked out again on every track change, not only when the
+    /// player is picked.
+    player: String,
 }
 
 impl State {
@@ -365,6 +373,7 @@ impl State {
             searching: false,
             art: None,
             song,
+            player: String::new(),
         }
     }
 
@@ -381,7 +390,10 @@ impl State {
                     None => t("No synced lyrics found for this one."),
                 };
             }
-            Update::Player(name) => self.clock.set_offset_ms(self.settings.offset_ms(&name)),
+            Update::Player(name) => {
+                self.player = name;
+                self.apply_offset();
+            }
             Update::Media(Event::TrackChanged(track)) => {
                 // An empty track means no player at all, so there is nothing
                 // to look up and nothing to wait for.
@@ -399,6 +411,7 @@ impl State {
                 self.lyrics = None;
                 self.art = None;
                 self.publish_song();
+                self.apply_offset();
                 self.stalled = false;
                 self.clock.reset();
             }
@@ -446,6 +459,32 @@ impl State {
             .flatten();
 
         (name, elapsed)
+    }
+
+    /// Names the recording playing now, for the correction kept against it.
+    fn track_key(&self) -> Option<String> {
+        if self.track.is_empty() {
+            return None;
+        }
+        Some(Settings::track_key(
+            &self.track.artists.join(", "),
+            &self.title(),
+            self.track.length,
+        ))
+    }
+
+    /// Points the clock at whichever correction applies: this recording's, or
+    /// the player's.
+    fn apply_offset(&mut self) {
+        let key = self.track_key();
+        let offset_ms = self.settings.offset_for(&self.player, key.as_deref());
+        tracing::debug!(
+            offset_ms,
+            player = self.player,
+            track = key.as_deref().unwrap_or("-"),
+            "correction in force"
+        );
+        self.clock.set_offset_ms(offset_ms);
     }
 
     /// Hands the whole song to the window that lists it, if it is open.
