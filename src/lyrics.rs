@@ -54,10 +54,18 @@ impl Lyrics {
     /// An instrumental gap is a line like any other here: it is found, and it
     /// has no words, which is how the screen goes quiet.
     pub fn line_at(&self, position: Duration) -> Option<&Line> {
+        self.index_at(position).map(|index| &self.lines[index])
+    }
+
+    /// Where in the song `position` falls, as a place in `lines`.
+    ///
+    /// The window that lists the whole song needs the place, not the line:
+    /// two identical lines are two different rows on screen.
+    pub fn index_at(&self, position: Duration) -> Option<usize> {
         let position = self.shifted(position);
         // The last line whose moment has already passed.
         let index = self.lines.partition_point(|line| line.at <= position);
-        index.checked_sub(1).map(|index| &self.lines[index])
+        index.checked_sub(1)
     }
 
     /// The line sung just before this one, skipping the silences.
