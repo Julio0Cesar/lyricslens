@@ -74,6 +74,18 @@ pub struct Settings {
     /// Manual correction per player, in milliseconds. Positive means the
     /// lyrics run early and have to wait.
     pub offsets: BTreeMap<String, i64>,
+    /// Where the overlay was left on each screen, by connector name. A screen
+    /// that has never been used is not in here and falls back to the two
+    /// margins above, which is also what the very first run uses.
+    pub positions: BTreeMap<String, Position>,
+}
+
+/// Where the overlay sits on one screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Position {
+    pub bottom: i32,
+    /// Absent means centred, the same as `left_margin`.
+    pub left: Option<i32>,
 }
 
 impl Default for Settings {
@@ -103,11 +115,50 @@ impl Default for Settings {
             hide_when_paused: true,
             movable: false,
             offsets: BTreeMap::new(),
+            positions: BTreeMap::new(),
         }
     }
 }
 
 impl Settings {
+    /// Where the overlay goes on this screen.
+    ///
+    /// A screen never used falls back to the single pair of margins, which is
+    /// what every screen used before there was a table.
+    pub fn position_on(&self, screen: Option<&str>) -> Position {
+        screen
+            .and_then(|screen| self.positions.get(screen))
+            .copied()
+            .unwrap_or(Position {
+                bottom: self.bottom_margin,
+                left: self.left_margin,
+            })
+    }
+
+    /// Remembers where the overlay was left on this screen.
+    ///
+    /// The two plain margins follow along, so a screen plugged in for the
+    /// first time starts where the last one was rather than at the default.
+    pub fn set_position_on(&mut self, screen: Option<&str>, at: Position) {
+        self.bottom_margin = at.bottom;
+        self.left_margin = at.left;
+        if let Some(screen) = screen {
+            self.positions.insert(screen.to_owned(), at);
+        }
+    }
+
+    /// Sets the distance from the bottom on every screen.
+    ///
+    /// What the preferences window writes. Typing a number there means it for
+    /// the whole program; dragging means it for the screen dragged on, and
+    /// would otherwise win over anything typed afterwards.
+    pub fn set_bottom_everywhere(&mut self, bottom: i32) {
+        self.bottom_margin = bottom;
+        for at in self.positions.values_mut() {
+            at.bottom = bottom;
+        }
+    }
+
     /// The alignment as GTK spells it, with anything unrecognised centred.
     pub fn alignment(&self) -> &'static str {
         match self.align.trim().to_ascii_lowercase().as_str() {
@@ -176,6 +227,75 @@ fn path() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_screen_never_used_falls_back_to_the_single_pair() {
+        let settings = Settings {
+            bottom_margin: 57,
+            left_margin: Some(528),
+            ..Settings::default()
+        };
+        let at = settings.position_on(Some("HDMI-A-1"));
+        assert_eq!(at.bottom, 57);
+        assert_eq!(at.left, Some(528));
+    }
+
+    #[test]
+    fn each_screen_keeps_its_own_place() {
+        let mut settings = Settings::default();
+        settings.set_position_on(
+            Some("eDP-1"),
+            Position {
+                bottom: 40,
+                left: Some(100),
+            },
+        );
+        settings.set_position_on(
+            Some("HDMI-A-1"),
+            Position {
+                bottom: 90,
+                left: Some(700),
+            },
+        );
+
+        assert_eq!(settings.position_on(Some("eDP-1")).left, Some(100));
+        assert_eq!(settings.position_on(Some("HDMI-A-1")).left, Some(700));
+    }
+
+    #[test]
+    fn a_new_screen_starts_where_the_last_one_was_left() {
+        let mut settings = Settings::default();
+        settings.set_position_on(
+            Some("eDP-1"),
+            Position {
+                bottom: 40,
+                left: Some(100),
+            },
+        );
+        // Never used: falls back to the pair the last drag left.
+        assert_eq!(settings.position_on(Some("DP-3")).bottom, 40);
+    }
+
+    #[test]
+    fn the_typed_distance_reaches_every_screen() {
+        let mut settings = Settings::default();
+        settings.set_position_on(
+            Some("eDP-1"),
+            Position {
+                bottom: 40,
+                left: Some(100),
+            },
+        );
+        settings.set_bottom_everywhere(120);
+
+        let at = settings.position_on(Some("eDP-1"));
+        assert_eq!(at.bottom, 120);
+        assert_eq!(
+            at.left,
+            Some(100),
+            "only the distance from the bottom changes"
+        );
+    }
+
     use super::*;
 
     #[test]
