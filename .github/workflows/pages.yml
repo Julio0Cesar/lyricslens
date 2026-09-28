@@ -78,10 +78,17 @@ jobs:
             --armor --detach-sign --output repodata/repomd.xml.asc repodata/repomd.xml
 
       - name: The key and the page
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           gpg --armor --export "$(cat fingerprint)" > site/lyricslens.asc
+          cp packaging/icons/128.png site/icon.png
+          # The page names the files of the newest release, so the version has
+          # to come from the release rather than be typed into the page.
+          VERSION=$(gh release view --json tagName --jq .tagName)
+          export VERSION
           FINGERPRINT=$(sed 's/.\{4\}/& /g' fingerprint) \
-            envsubst < packaging/pages/index.html > site/index.html
+            envsubst '$FINGERPRINT $VERSION' < packaging/pages/index.html > site/index.html
 
       - uses: actions/upload-pages-artifact@v3
         with:
