@@ -20,6 +20,7 @@ Options:
       --foreground  keep the terminal, instead of letting go of it
       --settings    open the preferences window
       --toggle      hide the overlay, or bring it back
+      --song        open the whole song in a window
       --position    drag the overlay somewhere else, then press again
       --quit        close the overlay that is running
       --paths       print where the settings, the cache and the log live
@@ -147,6 +148,7 @@ fn known(argument: &str) -> bool {
             | "--foreground"
             | "--settings"
             | "--toggle"
+            | "--song"
             | "--position"
             | "--quit"
     )

@@ -21,6 +21,7 @@ const ICON: &[u8] = include_bytes!("../../packaging/icons/128.png");
 #[derive(Debug, Clone, Copy)]
 pub enum Command {
     Toggle,
+    Song,
     Position,
     Settings,
     Quit,
@@ -78,6 +79,12 @@ impl ksni::Tray for Tray {
             StandardItem {
                 label: t("Show / hide"),
                 activate: Box::new(|tray: &mut Self| tray.send(Command::Toggle)),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: t("Whole song…"),
+                activate: Box::new(|tray: &mut Self| tray.send(Command::Song)),
                 ..Default::default()
             }
             .into(),

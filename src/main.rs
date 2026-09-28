@@ -15,6 +15,7 @@ use lyricslens::sync::Playback;
 use lyricslens::sync::clock::Clock;
 use lyricslens::ui::overlay::Overlay;
 use lyricslens::ui::settings as preferences;
+use lyricslens::ui::song;
 use lyricslens::ui::tray;
 
 /// How often the overlay asks the clock which line is being sung.
@@ -37,8 +38,9 @@ const GRACE: Duration = Duration::from_secs(4);
 /// Wayland gives an ordinary client no way to grab a key combination, so the
 /// hotkey belongs to the compositor. All this program offers is the command
 /// for the compositor to run.
-const COMMANDS: [(&str, &str); 4] = [
+const COMMANDS: [(&str, &str); 5] = [
     ("--toggle", "toggle"),
+    ("--song", "song"),
     ("--position", "position"),
     ("--settings", "settings"),
     ("--quit", "quit"),
@@ -109,12 +111,22 @@ fn main() -> glib::ExitCode {
         let overlay = Rc::new(overlay);
         *running.borrow_mut() = Some(Rc::clone(&overlay));
 
+        // What the window that lists the whole song reads. Kept here because
+        // this is where the player is followed; the window only looks.
+        let song = song::Feed {
+            lyrics: Rc::new(RefCell::new(None)),
+            current: Rc::new(std::cell::Cell::new(None)),
+            track: Rc::new(RefCell::new(String::new())),
+            generation: Rc::new(std::cell::Cell::new(0)),
+        };
+
         let report = Rc::new(RefCell::new(String::new()));
         let newer = Rc::new(RefCell::new(None));
         let state = Rc::new(RefCell::new(State::new(
             settings.clone(),
             Rc::clone(&report),
             Rc::clone(&newer),
+            song.clone(),
         )));
 
         // What the preferences window needs to search for the track playing
@@ -129,7 +141,7 @@ fn main() -> glib::ExitCode {
             newer: Rc::clone(&newer),
         };
 
-        add_commands(application, &overlay, &search);
+        add_commands(application, &overlay, &search, &song);
         ask_for_the_keys(&settings);
 
         // The icon in the status bar is the only handle a program with no
@@ -139,10 +151,12 @@ fn main() -> glib::ExitCode {
             let application = application.clone();
             let overlay = Rc::clone(&overlay);
             let search = search.clone();
+            let song = song.clone();
             async move {
                 while let Ok(command) = commands.recv().await {
                     match command {
                         tray::Command::Toggle => overlay.toggle(),
+                        tray::Command::Song => song::show(&application, song.clone()),
                         tray::Command::Position => overlay.toggle_positioning(),
                         tray::Command::Settings => {
                             preferences::show(&application, Some(search.clone()));
@@ -199,6 +213,7 @@ fn main() -> glib::ExitCode {
             let (name, elapsed) = state.now_playing();
             overlay.show_track(name.as_deref(), elapsed);
             overlay.show_art(state.art());
+            state.song.current.set(state.line_index());
             glib::ControlFlow::Continue
         });
     });
@@ -258,6 +273,7 @@ fn add_commands(
     application: &adw::Application,
     overlay: &Rc<Overlay>,
     search: &preferences::Search,
+    song: &song::Feed,
 ) {
     let present = gio::SimpleAction::new("present", None);
     present.connect_activate({
@@ -270,6 +286,13 @@ fn add_commands(
         let application = application.clone();
         let search = search.clone();
         move |_, _| preferences::show(&application, Some(search.clone()))
+    });
+
+    let whole_song = gio::SimpleAction::new("song", None);
+    whole_song.connect_activate({
+        let application = application.clone();
+        let song = song.clone();
+        move |_, _| song::show(&application, song.clone())
     });
 
     let quit = gio::SimpleAction::new("quit", None);
@@ -295,6 +318,7 @@ fn add_commands(
     application.add_action(&settings);
     application.add_action(&toggle);
     application.add_action(&position);
+    application.add_action(&whole_song);
 }
 
 /// What the overlay is showing, and everything it takes to decide that.
@@ -317,6 +341,8 @@ struct State {
     searching: bool,
     /// The cover for what is playing, once it has been found.
     art: Option<std::path::PathBuf>,
+    /// What the window that lists the whole song reads.
+    song: song::Feed,
 }
 
 impl State {
@@ -324,6 +350,7 @@ impl State {
         settings: Settings,
         report: Rc<RefCell<String>>,
         newer: Rc<RefCell<Option<String>>>,
+        song: song::Feed,
     ) -> Self {
         Self {
             settings,
@@ -337,6 +364,7 @@ impl State {
             stalled: false,
             searching: false,
             art: None,
+            song,
         }
     }
 
@@ -345,6 +373,7 @@ impl State {
             Update::Lyrics(lyrics) => {
                 self.lyrics = *lyrics;
                 self.searching = false;
+                self.publish_song();
                 *self.report.borrow_mut() = match &self.lyrics {
                     Some(lyrics) => {
                         format!("{} {}", lyrics.lines.len(), t("lines being followed."))
@@ -369,6 +398,7 @@ impl State {
                 self.track = track;
                 self.lyrics = None;
                 self.art = None;
+                self.publish_song();
                 self.stalled = false;
                 self.clock.reset();
             }
@@ -416,6 +446,31 @@ impl State {
             .flatten();
 
         (name, elapsed)
+    }
+
+    /// Hands the whole song to the window that lists it, if it is open.
+    ///
+    /// Counted rather than compared: the window rebuilds its list when the
+    /// count moves, and comparing two whole songs on every tick is the
+    /// alternative.
+    fn publish_song(&self) {
+        *self.song.lyrics.borrow_mut() = self.lyrics.clone();
+        *self.song.track.borrow_mut() = if self.track.is_empty() {
+            String::new()
+        } else if self.track.artists.is_empty() {
+            self.title()
+        } else {
+            format!("{}  —  {}", self.track.artists.join(", "), self.title())
+        };
+        self.song
+            .generation
+            .set(self.song.generation.get().wrapping_add(1));
+    }
+
+    /// Where in the song the clock is, as a place in the list of lines.
+    fn line_index(&self) -> Option<usize> {
+        let position = self.clock.position(Instant::now())?;
+        self.lyrics.as_ref()?.index_at(position)
     }
 
     /// The cover to draw beside the lyrics, when there is one and it is wanted.
