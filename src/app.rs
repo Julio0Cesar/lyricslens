@@ -261,6 +261,19 @@ async fn fetch(client: Client, track: Track, updates: async_channel::Sender<Upda
         return;
     }
 
+    // Before anything else: a local library often already has the words on
+    // disk, written by whoever tagged the collection, and that file is the one
+    // its owner chose.
+    if let Some(lyrics) = beside_the_track(&track) {
+        tracing::info!(
+            lines = lyrics.lines.len(),
+            ?query,
+            "lyrics from a file beside the track"
+        );
+        let _ = updates.send(Update::Lyrics(Box::new(Some(lyrics)))).await;
+        return;
+    }
+
     let artist = query.artist.as_deref().unwrap_or_default();
     if let Some(lyrics) = cache::get(artist, &query.title, track.length) {
         tracing::info!(lines = lyrics.lines.len(), ?query, "lyrics from the cache");
@@ -295,9 +308,89 @@ async fn find_art(art: Art, track: Track, updates: async_channel::Sender<Update>
     let _ = updates.send(Update::Art(found)).await;
 }
 
+/// The `.lrc` next to the audio file, when the track is a file on this machine
+/// and that file holds synced lines.
+///
+/// Only the sibling with the same name: a `lyrics` folder next to the album is
+/// the other convention in the wild, and reading one of the two is a
+/// reasonable place to stop.
+fn beside_the_track(track: &Track) -> Option<Lyrics> {
+    let path = track.local_file()?.with_extension("lrc");
+    let text = std::fs::read_to_string(&path).ok()?;
+    let lyrics = lrc::parse(&text);
+    if lyrics.is_empty() {
+        tracing::debug!(path = %path.display(), "the file beside the track has no synced lines");
+        return None;
+    }
+    Some(lyrics)
+}
+
 fn report(query: &Query, lyrics: Option<&Lyrics>) {
     match lyrics {
         Some(lyrics) => tracing::info!(lines = lyrics.lines.len(), ?query, "lyrics found"),
         None => tracing::info!(?query, "no synced lyrics for this one"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A folder of its own per test: they run at the same time, and a file
+    /// left behind would decide another one's answer.
+    fn folder(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("lyricslens-beside-{name}"));
+        std::fs::create_dir_all(&dir).expect("a temp folder");
+        dir
+    }
+
+    fn playing(audio: &std::path::Path) -> Track {
+        Track {
+            title: Some("Airbag".to_owned()),
+            url: Some(format!("file://{}", audio.display())),
+            ..Track::default()
+        }
+    }
+
+    #[test]
+    fn the_lrc_next_to_the_audio_is_read() {
+        let dir = folder("read");
+        let audio = dir.join("airbag.flac");
+        std::fs::write(&audio, b"not really audio").expect("the audio file");
+        std::fs::write(dir.join("airbag.lrc"), "[00:01.00]In the next world war")
+            .expect("the lyrics file");
+
+        let lyrics = beside_the_track(&playing(&audio)).expect("lines from the file");
+        assert_eq!(lyrics.lines[0].sung(), Some("In the next world war"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_file_with_no_timestamps_is_not_used() {
+        let dir = folder("plain");
+        let audio = dir.join("airbag.flac");
+        std::fs::write(&audio, b"not really audio").expect("the audio file");
+        std::fs::write(dir.join("airbag.lrc"), "In the next world war").expect("the lyrics file");
+
+        assert!(beside_the_track(&playing(&audio)).is_none());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_track_with_no_file_beside_it_falls_through() {
+        let dir = folder("alone");
+        let audio = dir.join("airbag.flac");
+        std::fs::write(&audio, b"not really audio").expect("the audio file");
+
+        assert!(beside_the_track(&playing(&audio)).is_none());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_track_that_is_not_a_file_falls_through() {
+        assert!(beside_the_track(&Track::default()).is_none());
     }
 }

@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use crate::error::Error;
-use crate::media::Track;
+use crate::media::{Track, file_url};
 use crate::store::cache::digest;
 
 /// Where the lookup goes when the player named no picture. It needs no key and
@@ -65,7 +65,7 @@ impl Art {
     pub async fn find(&self, track: &Track) -> Option<PathBuf> {
         // A local library already has the picture next to the music. Nothing
         // is copied: the player named a file that is going to stay there.
-        if let Some(local) = track.art_url.as_deref().and_then(local_file) {
+        if let Some(local) = track.art_url.as_deref().and_then(file_url) {
             return local.is_file().then_some(local);
         }
 
@@ -152,43 +152,6 @@ fn key(track: &Track) -> Option<(String, String)> {
     (!artist.is_empty() && !album.is_empty()).then_some((artist, album))
 }
 
-/// The path inside a `file://` address, with its escapes undone.
-fn local_file(url: &str) -> Option<PathBuf> {
-    let rest = url.strip_prefix("file://")?;
-    // `file:///home/...` is the usual shape; a host between the slashes is
-    // allowed by the spec and is never a file this machine can open.
-    let path = rest.strip_prefix('/').map(|path| format!("/{path}"))?;
-    Some(PathBuf::from(unescape(&path)))
-}
-
-fn unescape(text: &str) -> String {
-    let mut out = Vec::with_capacity(text.len());
-    let bytes = text.as_bytes();
-    let mut at = 0;
-    while at < bytes.len() {
-        match bytes[at] {
-            b'%' if at + 2 < bytes.len() => {
-                let pair = std::str::from_utf8(&bytes[at + 1..at + 3]).unwrap_or("");
-                match u8::from_str_radix(pair, 16) {
-                    Ok(byte) => {
-                        out.push(byte);
-                        at += 3;
-                    }
-                    Err(_) => {
-                        out.push(bytes[at]);
-                        at += 1;
-                    }
-                }
-            }
-            byte => {
-                out.push(byte);
-                at += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,19 +163,6 @@ mod tests {
             album: album.map(ToOwned::to_owned),
             ..Track::default()
         }
-    }
-
-    #[test]
-    fn a_local_address_becomes_a_path() {
-        assert_eq!(
-            local_file("file:///home/me/Music/OK%20Computer/cover.jpg"),
-            Some(PathBuf::from("/home/me/Music/OK Computer/cover.jpg"))
-        );
-    }
-
-    #[test]
-    fn a_remote_address_is_not_a_path() {
-        assert_eq!(local_file("https://example.invalid/cover.jpg"), None);
     }
 
     #[test]
