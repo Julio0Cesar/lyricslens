@@ -402,7 +402,53 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
             save(&settings.borrow(), &app);
         }
     });
+    offset.set_title(&t("For this player"));
     timing.add(&offset);
+
+    // The recording playing now, which only the running overlay knows. With
+    // nothing playing there is nothing to correct, and the row says so instead
+    // of writing a correction against an empty name.
+    let playing = search
+        .as_ref()
+        .map(|search| search.playing.borrow().clone());
+    let track_key = playing
+        .as_ref()
+        .filter(|track| !track.is_empty())
+        .map(|track| {
+            Settings::track_key(
+                &track.artists.join(", "),
+                track.title.as_deref().unwrap_or_default(),
+                track.length,
+            )
+        });
+
+    let track_offset = adw::SpinRow::with_range(-5000.0, 5000.0, 50.0);
+    track_offset.set_title(&t("For this track only"));
+    match (&track_key, &playing) {
+        (Some(key), Some(track)) => {
+            track_offset.set_subtitle(track.title.as_deref().unwrap_or_default());
+            track_offset.set_value(settings.borrow().track_offset_ms(key) as f64);
+        }
+        _ => {
+            track_offset.set_subtitle(&t("Nothing playing"));
+            track_offset.set_sensitive(false);
+        }
+    }
+    track_offset.connect_value_notify({
+        let settings = settings.clone();
+        let app = app.clone();
+        let track_key = track_key.clone();
+        move |row| {
+            let Some(key) = track_key.as_deref() else {
+                return;
+            };
+            settings
+                .borrow_mut()
+                .set_track_offset_ms(key, row.value() as i64);
+            save(&settings.borrow(), &app);
+        }
+    });
+    timing.add(&track_offset);
 
     let place = Section::new(
         &t("Position"),

@@ -74,6 +74,10 @@ pub struct Settings {
     /// Manual correction per player, in milliseconds. Positive means the
     /// lyrics run early and have to wait.
     pub offsets: BTreeMap<String, i64>,
+    /// The same, for one recording, which is the case the per-player one does
+    /// not cover: lyrics timed against a different master, while everything
+    /// else in that player is fine.
+    pub track_offsets: BTreeMap<String, i64>,
     /// Where the overlay was left on each screen, by connector name. A screen
     /// that has never been used is not in here and falls back to the two
     /// margins above, which is also what the very first run uses.
@@ -115,6 +119,7 @@ impl Default for Settings {
             hide_when_paused: true,
             movable: false,
             offsets: BTreeMap::new(),
+            track_offsets: BTreeMap::new(),
             positions: BTreeMap::new(),
         }
     }
@@ -212,6 +217,40 @@ impl Settings {
         self.offsets.get(player).copied().unwrap_or(0)
     }
 
+    /// Names one recording, the same way the lyrics cache does: a live version
+    /// and the album one share artist and title and are not the same timing.
+    pub fn track_key(artist: &str, title: &str, length: Option<std::time::Duration>) -> String {
+        let seconds = length.map(|length| length.as_secs().to_string());
+        super::cache::digest(&[
+            artist.trim().to_lowercase().as_bytes(),
+            title.trim().to_lowercase().as_bytes(),
+            seconds.as_deref().unwrap_or_default().as_bytes(),
+        ])
+    }
+
+    /// The correction that applies right now: the recording's own when it has
+    /// one, the player's otherwise.
+    pub fn offset_for(&self, player: &str, track: Option<&str>) -> i64 {
+        track
+            .and_then(|track| self.track_offsets.get(track))
+            .copied()
+            .unwrap_or_else(|| self.offset_ms(player))
+    }
+
+    pub fn track_offset_ms(&self, track: &str) -> i64 {
+        self.track_offsets.get(track).copied().unwrap_or(0)
+    }
+
+    /// Zero means "no correction of its own", so the entry goes rather than
+    /// sitting there overriding the player's with nothing.
+    pub fn set_track_offset_ms(&mut self, track: &str, offset_ms: i64) {
+        if offset_ms == 0 {
+            self.track_offsets.remove(track);
+        } else {
+            self.track_offsets.insert(track.to_owned(), offset_ms);
+        }
+    }
+
     pub fn set_offset_ms(&mut self, player: &str, offset_ms: i64) {
         if offset_ms == 0 {
             self.offsets.remove(player);
@@ -227,6 +266,48 @@ fn path() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+    #[test]
+    fn a_track_with_no_correction_of_its_own_follows_the_player() {
+        let mut settings = Settings::default();
+        settings.set_offset_ms("spotify", -250);
+        let key = Settings::track_key("Radiohead", "Creep", None);
+
+        assert_eq!(settings.offset_for("spotify", Some(&key)), -250);
+    }
+
+    #[test]
+    fn a_correction_on_the_track_wins_over_the_player() {
+        let mut settings = Settings::default();
+        settings.set_offset_ms("spotify", -250);
+        let key = Settings::track_key("Radiohead", "Creep", None);
+        settings.set_track_offset_ms(&key, 400);
+
+        assert_eq!(settings.offset_for("spotify", Some(&key)), 400);
+        // Every other track in that player is untouched.
+        let other = Settings::track_key("Radiohead", "Let Down", None);
+        assert_eq!(settings.offset_for("spotify", Some(&other)), -250);
+    }
+
+    #[test]
+    fn clearing_a_track_gives_it_back_to_the_player() {
+        let mut settings = Settings::default();
+        settings.set_offset_ms("spotify", -250);
+        let key = Settings::track_key("Radiohead", "Creep", None);
+        settings.set_track_offset_ms(&key, 400);
+        settings.set_track_offset_ms(&key, 0);
+
+        assert!(settings.track_offsets.is_empty());
+        assert_eq!(settings.offset_for("spotify", Some(&key)), -250);
+    }
+
+    #[test]
+    fn a_live_version_is_not_the_album_one() {
+        let album = Settings::track_key("Radiohead", "Creep", Some(Duration::from_secs(238)));
+        let live = Settings::track_key("Radiohead", "Creep", Some(Duration::from_secs(300)));
+        assert_ne!(album, live);
+    }
+
     #[test]
     fn a_screen_never_used_falls_back_to_the_single_pair() {
         let settings = Settings {
