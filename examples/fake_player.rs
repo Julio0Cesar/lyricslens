@@ -2,8 +2,11 @@
 //! actually moves, for working on the overlay without a music player installed.
 //!
 //! ```sh
-//! cargo run --example fake_player -- "Radiohead" "Creep" 238
+//! cargo run --example fake_player -- "Radiohead" "Creep" 238 /caminho/musica.mp3
 //! ```
+//!
+//! The fourth argument is optional and becomes `xesam:url`, which is how a
+//! local library player says where the file is.
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -16,6 +19,7 @@ struct Player {
     artist: String,
     title: String,
     length: Duration,
+    file: Option<String>,
 }
 
 #[interface(name = "org.mpris.MediaPlayer2.Player")]
@@ -23,7 +27,7 @@ impl Player {
     #[zbus(property)]
     fn metadata(&self) -> HashMap<String, OwnedValue> {
         let owned = |value: Value<'_>| OwnedValue::try_from(value).expect("a convertible value");
-        HashMap::from([
+        let mut fields = HashMap::from([
             ("xesam:title".to_owned(), owned(Value::from(&self.title))),
             (
                 "xesam:artist".to_owned(),
@@ -33,7 +37,11 @@ impl Player {
                 "mpris:length".to_owned(),
                 owned(Value::from(self.length.as_micros() as u64)),
             ),
-        ])
+        ]);
+        if let Some(file) = &self.file {
+            fields.insert("xesam:url".to_owned(), owned(Value::from(file)));
+        }
+        fields
     }
 
     #[zbus(property)]
@@ -58,6 +66,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .next()
         .and_then(|seconds| seconds.parse().ok())
         .unwrap_or(238);
+    let file = args.next().map(|path| match path.strip_prefix("file://") {
+        Some(_) => path.clone(),
+        None => format!("file://{path}"),
+    });
 
     let _connection = zbus::connection::Builder::session()?
         .name("org.mpris.MediaPlayer2.lyricslensfake")?
@@ -68,6 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 artist: artist.clone(),
                 title: title.clone(),
                 length: Duration::from_secs(length),
+                file,
             },
         )?
         .build()

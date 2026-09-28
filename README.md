@@ -195,6 +195,10 @@ nothing to synchronise against, and the overlay says so on screen rather than
 guessing. Players that do report it — Spotify, mpv with `mpv-mpris`, Rhythmbox,
 Amberol — work.
 
+If the player names a local file, an `.lrc` of the same name next to it is used
+before anything is fetched — so a tagged collection works with no network at
+all, and a file you corrected by hand is the one that plays.
+
 With more than one player open, pick the one you mean in the preferences, or
 for a single run:
 

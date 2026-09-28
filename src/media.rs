@@ -1,6 +1,7 @@
 //! What is playing, and where that knowledge comes from.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use zbus::zvariant::{OwnedValue, Value};
@@ -39,10 +40,13 @@ pub struct Track {
     /// Where the player says the cover is: a local file, an address, or
     /// nothing at all, which is what a browser always says.
     pub art_url: Option<String>,
+    /// Where the audio itself is. A local library gives a file; a browser
+    /// gives a page, or nothing.
+    pub url: Option<String>,
 }
 
 impl Track {
-    /// Reads the five fields the overlay needs out of `org.mpris.MediaPlayer2.Player.Metadata`.
+    /// Reads the six fields the overlay needs out of `org.mpris.MediaPlayer2.Player.Metadata`.
     ///
     /// Anything missing, of the wrong type, or empty becomes `None` rather than
     /// an error: a player sending garbage should cost us one blank line, not a
@@ -57,13 +61,57 @@ impl Track {
                 .and_then(microseconds)
                 .map(Duration::from_micros),
             art_url: text(metadata, "mpris:artUrl"),
+            url: text(metadata, "xesam:url"),
         }
+    }
+
+    /// The audio file this track is, when it is one on this machine.
+    pub fn local_file(&self) -> Option<std::path::PathBuf> {
+        let path = file_url(self.url.as_deref()?)?;
+        path.is_file().then_some(path)
     }
 
     /// True when the player gave us nothing worth showing.
     pub fn is_empty(&self) -> bool {
         self.title.is_none() && self.artists.is_empty() && self.album.is_none()
     }
+}
+
+/// The path inside a `file://` address, with its escapes undone.
+pub fn file_url(url: &str) -> Option<PathBuf> {
+    let rest = url.strip_prefix("file://")?;
+    // `file:///home/...` is the usual shape; a host between the slashes is
+    // allowed by the spec and is never a file this machine can open.
+    let path = rest.strip_prefix('/').map(|path| format!("/{path}"))?;
+    Some(PathBuf::from(unescape(&path)))
+}
+
+fn unescape(text: &str) -> String {
+    let mut out = Vec::with_capacity(text.len());
+    let bytes = text.as_bytes();
+    let mut at = 0;
+    while at < bytes.len() {
+        match bytes[at] {
+            b'%' if at + 2 < bytes.len() => {
+                let pair = std::str::from_utf8(&bytes[at + 1..at + 3]).unwrap_or("");
+                match u8::from_str_radix(pair, 16) {
+                    Ok(byte) => {
+                        out.push(byte);
+                        at += 3;
+                    }
+                    Err(_) => {
+                        out.push(bytes[at]);
+                        at += 1;
+                    }
+                }
+            }
+            byte => {
+                out.push(byte);
+                at += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn text(metadata: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
@@ -140,12 +188,36 @@ mod tests {
             ),
             ("xesam:album", Value::from("OK Computer")),
             ("mpris:length", Value::from(383_000_000u64)),
+            ("xesam:url", Value::from("file:///music/airbag.flac")),
         ]));
 
         assert_eq!(track.title.as_deref(), Some("Paranoid Android"));
         assert_eq!(track.artists, ["Radiohead", "Nigel Godrich"]);
         assert_eq!(track.album.as_deref(), Some("OK Computer"));
         assert_eq!(track.length, Some(Duration::from_secs(383)));
+        assert_eq!(track.url.as_deref(), Some("file:///music/airbag.flac"));
+    }
+
+    #[test]
+    fn a_local_address_becomes_a_path() {
+        assert_eq!(
+            file_url("file:///home/me/Music/OK%20Computer/01.flac"),
+            Some(PathBuf::from("/home/me/Music/OK Computer/01.flac"))
+        );
+    }
+
+    #[test]
+    fn a_remote_address_is_not_a_path() {
+        assert_eq!(file_url("https://example.invalid/stream"), None);
+    }
+
+    #[test]
+    fn a_track_that_is_not_a_file_here_has_no_local_file() {
+        let track = Track {
+            url: Some("https://example.invalid/watch".to_owned()),
+            ..Track::default()
+        };
+        assert_eq!(track.local_file(), None);
     }
 
     #[test]
