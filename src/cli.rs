@@ -136,22 +136,26 @@ pub fn detach() -> u8 {
     }
 }
 
+/// Every option the program takes. The completions in `packaging/completions`
+/// are written by hand from this list.
+const FLAGS: &[&str] = &[
+    "-h",
+    "--help",
+    "-V",
+    "--version",
+    "--paths",
+    "--upgrade",
+    "--uninstall",
+    "--foreground",
+    "--settings",
+    "--toggle",
+    "--song",
+    "--position",
+    "--quit",
+];
+
 fn known(argument: &str) -> bool {
-    matches!(
-        argument,
-        "-h" | "--help"
-            | "-V"
-            | "--version"
-            | "--paths"
-            | "--upgrade"
-            | "--uninstall"
-            | "--foreground"
-            | "--settings"
-            | "--toggle"
-            | "--song"
-            | "--position"
-            | "--quit"
-    )
+    FLAGS.contains(&argument)
 }
 
 fn paths() {
@@ -191,6 +195,40 @@ fn installer(arguments: &[&str]) -> u8 {
         Err(error) => {
             eprintln!("lyricslens: could not run the installer: {error}");
             1
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FLAGS;
+
+    // A flag added to the program and forgotten in a completion is offered by
+    // no shell, and nothing else would notice.
+    #[test]
+    fn every_flag_is_completed_in_every_shell() {
+        let shells = [
+            (
+                "bash",
+                include_str!("../packaging/completions/lyricslens.bash"),
+            ),
+            ("zsh", include_str!("../packaging/completions/_lyricslens")),
+            (
+                "fish",
+                include_str!("../packaging/completions/lyricslens.fish"),
+            ),
+        ];
+        for flag in FLAGS.iter().filter(|flag| flag.starts_with("--")) {
+            for (shell, script) in shells {
+                let written = match shell {
+                    "fish" => format!("-l {}", &flag[2..]),
+                    _ => flag.to_string(),
+                };
+                assert!(
+                    script.contains(&written),
+                    "{shell} does not complete {flag}"
+                );
+            }
         }
     }
 }

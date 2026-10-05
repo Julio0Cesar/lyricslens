@@ -94,6 +94,7 @@ jobs:
           cp target/release/lyricslens "$dir/"
           cp packaging/icons/*.png "$dir/icons/"
           cp README.md LICENSE "$dir/"
+          cp -r packaging/completions "$dir/"
           # The oldest glibc this binary will run against, read from the
           # binary itself. install.sh checks it before downloading, so a
           # distribution too old to run it is told so instead of being handed

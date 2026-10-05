@@ -53,6 +53,11 @@ assets = [
     ["packaging/icons/128.png", "usr/share/icons/hicolor/128x128/apps/lyricslens.png", "644"],
     ["packaging/icons/256.png", "usr/share/icons/hicolor/256x256/apps/lyricslens.png", "644"],
     ["README.md", "usr/share/doc/lyricslens/README.md", "644"],
+    ["packaging/completions/lyricslens.bash", "usr/share/bash-completion/completions/lyricslens", "644"],
+    ["packaging/completions/lyricslens.bash", "usr/share/bash-completion/completions/lls", "644"],
+    ["packaging/completions/_lyricslens", "usr/share/zsh/vendor-completions/_lyricslens", "644"],
+    ["packaging/completions/lyricslens.fish", "usr/share/fish/vendor_completions.d/lyricslens.fish", "644"],
+    ["packaging/completions/lyricslens.fish", "usr/share/fish/vendor_completions.d/lls.fish", "644"],
 ]
 
 # And the .rpm. Fedora and openSUSE spell the same libraries differently, so
@@ -67,6 +72,11 @@ assets = [
     { source = "packaging/icons/128.png", dest = "/usr/share/icons/hicolor/128x128/apps/lyricslens.png", mode = "644" },
     { source = "packaging/icons/256.png", dest = "/usr/share/icons/hicolor/256x256/apps/lyricslens.png", mode = "644" },
     { source = "README.md", dest = "/usr/share/doc/lyricslens/README.md", mode = "644" },
+    { source = "packaging/completions/lyricslens.bash", dest = "/usr/share/bash-completion/completions/lyricslens", mode = "644" },
+    { source = "packaging/completions/lyricslens.bash", dest = "/usr/share/bash-completion/completions/lls", mode = "644" },
+    { source = "packaging/completions/_lyricslens", dest = "/usr/share/zsh/site-functions/_lyricslens", mode = "644" },
+    { source = "packaging/completions/lyricslens.fish", dest = "/usr/share/fish/vendor_completions.d/lyricslens.fish", mode = "644" },
+    { source = "packaging/completions/lyricslens.fish", dest = "/usr/share/fish/vendor_completions.d/lls.fish", mode = "644" },
 ]
 
 [package.metadata.generate-rpm.requires]
