@@ -1,0 +1,14 @@
+#compdef lyricslens lls
+
+_arguments \
+    '(- *)'{-h,--help}'[print the help and exit]' \
+    '(- *)'{-V,--version}'[print the version and exit]' \
+    '--foreground[keep the terminal, instead of letting go of it]' \
+    '--settings[open the preferences window]' \
+    '--toggle[hide the overlay, or bring it back]' \
+    '--song[open the whole song in a window]' \
+    '--position[drag the overlay somewhere else, then press again]' \
+    '--quit[close the overlay that is running]' \
+    '--paths[print where the settings, the cache and the log live]' \
+    '--upgrade[install the newest release over this one]' \
+    '--uninstall[remove the program from ~/.local]'

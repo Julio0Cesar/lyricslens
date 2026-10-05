@@ -14,13 +14,34 @@ BIN="$HOME/.local/bin"
 APPS="$PREFIX/applications"
 ICONS="$PREFIX/icons/hicolor"
 HOME_DIR="$PREFIX/$NAME"
+BASH_COMPLETIONS="$PREFIX/bash-completion/completions"
+FISH_COMPLETIONS="${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions"
+ZSHRC="${ZDOTDIR:-$HOME}/.zshrc"
+# Marks the line this script adds to .zshrc, so --remove finds it again.
+ZSH_MARK="# added by the lyricslens installer"
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
+step() { printf '  %-12s %s\n' "$1" "$(printf '%s' "$2" | sed "s|^$HOME/|~/|")"; }
+
+# A progress bar when someone is watching, nothing when the output is a log.
+if [ -t 2 ]; then
+    CURL_PROGRESS="--progress-bar"
+else
+    CURL_PROGRESS="--silent --show-error"
+fi
 
 remove() {
     rm -rf "$HOME_DIR"
     rm -f "$BIN/$NAME" "$BIN/$SHORT" "$APPS/$NAME.desktop"
+    rm -f "$BASH_COMPLETIONS/$NAME" "$BASH_COMPLETIONS/$SHORT"
+    rm -f "$FISH_COMPLETIONS/$NAME.fish" "$FISH_COMPLETIONS/$SHORT.fish"
+    if [ -f "$ZSHRC" ] && grep -qF "$ZSH_MARK" "$ZSHRC"; then
+        # Written back in place rather than moved over it: a .zshrc that is a
+        # symlink into a dotfiles repository stays one.
+        kept=$(grep -vF "$ZSH_MARK" "$ZSHRC" || true)
+        printf '%s\n' "$kept" > "$ZSHRC"
+    fi
     for size in 32 64 128 256; do
         rm -f "$ICONS/${size}x${size}/apps/$NAME.png"
     done
@@ -82,6 +103,7 @@ if [ -z "$TAG" ]; then
         | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
 fi
 [ -n "$TAG" ] || die "could not find the latest release"
+say "Release: $TAG"
 
 ARCHIVE="$NAME-$TAG-x86_64-linux.tar.gz"
 BASE="https://github.com/$REPO/releases/download/$TAG"
@@ -92,15 +114,17 @@ needed=$(curl -fsSL "$BASE/MINIMUM_GLIBC" 2>/dev/null | tr -d '[:space:]')
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT INT TERM
 
-say "Downloading $NAME $TAG…"
-curl -fsSL "$BASE/$ARCHIVE" -o "$WORK/$ARCHIVE" || die "could not download $ARCHIVE"
+say "Downloading $BASE/$ARCHIVE"
+# shellcheck disable=SC2086 # two flags in one variable, split on purpose
+curl -fL $CURL_PROGRESS "$BASE/$ARCHIVE" -o "$WORK/$ARCHIVE" || die "could not download $ARCHIVE"
+say "Downloaded $(du -h "$WORK/$ARCHIVE" | cut -f1)."
 
 # A download nobody checks is a download nobody can trust.
 if curl -fsSL "$BASE/SHA256SUMS" -o "$WORK/SHA256SUMS" 2>/dev/null; then
     if command -v sha256sum >/dev/null 2>&1; then
         (cd "$WORK" && sha256sum -c SHA256SUMS --ignore-missing >/dev/null) \
             || die "the checksum does not match; the download was not installed"
-        say "Checksum verified."
+        say "Checksum verified (SHA256)."
     fi
 else
     say "warning: this release publishes no SHA256SUMS; skipping the check"
@@ -110,8 +134,10 @@ fi
 # are written without it.
 tar -xzf "$WORK/$ARCHIVE" -C "$WORK" --strip-components=1
 
+say "Installing:"
 mkdir -p "$HOME_DIR" "$BIN" "$APPS"
 install -Dm755 "$WORK/$NAME" "$HOME_DIR/$NAME"
+step program "$HOME_DIR/$NAME"
 
 # A launcher rather than a symlink: the .desktop file and the shell both point
 # here, and the real binary can move without either noticing.
@@ -120,15 +146,18 @@ cat > "$BIN/$NAME" <<LAUNCHER
 exec "$HOME_DIR/$NAME" "\$@"
 LAUNCHER
 chmod 755 "$BIN/$NAME"
+step command "$BIN/$NAME"
 
 # The same launcher under a name worth typing.
 ln -sf "$NAME" "$BIN/$SHORT"
+step "short name" "$BIN/$SHORT"
 
 for size in 32 64 128 256; do
     if [ -f "$WORK/icons/$size.png" ]; then
         install -Dm644 "$WORK/icons/$size.png" "$ICONS/${size}x${size}/apps/$NAME.png"
     fi
 done
+step icons "$ICONS"
 
 cat > "$APPS/$NAME.desktop" <<DESKTOP
 [Desktop Entry]
@@ -142,6 +171,26 @@ Terminal=false
 Categories=AudioVideo;Audio;Player;
 StartupNotify=false
 DESKTOP
+step "menu entry" "$APPS/$NAME.desktop"
+
+# Releases before 0.1.36 carry no completions.
+if [ -d "$WORK/completions" ]; then
+    # Both shells load a completion by the name of the command typed, so each
+    # name gets its own file.
+    install -Dm644 "$WORK/completions/$NAME.bash" "$BASH_COMPLETIONS/$NAME"
+    ln -sf "$NAME" "$BASH_COMPLETIONS/$SHORT"
+    install -Dm644 "$WORK/completions/$NAME.fish" "$FISH_COMPLETIONS/$NAME.fish"
+    ln -sf "$NAME.fish" "$FISH_COMPLETIONS/$SHORT.fish"
+
+    # zsh has no folder of its own under the home directory that it reads by
+    # itself, so .zshrc is told where to look. compdef exists only once
+    # compinit has run; before that, the folder on fpath is enough.
+    install -Dm644 "$WORK/completions/_$NAME" "$HOME_DIR/completions/_$NAME"
+    if [ -f "$ZSHRC" ] && ! grep -qF "$ZSH_MARK" "$ZSHRC"; then
+        printf '%s\n' "fpath+=(\"$HOME_DIR/completions\"); (( \$+functions[compdef] )) && autoload -Uz _$NAME && compdef _$NAME $NAME $SHORT $ZSH_MARK" >> "$ZSHRC"
+    fi
+    step completions "bash, zsh, fish (open a new terminal to use them)"
+fi
 
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPS" 2>/dev/null || true
 

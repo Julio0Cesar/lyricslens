@@ -142,6 +142,10 @@ use `lyricslens --quit` or the preferences window.
 | `lyricslens --quit` | closes the overlay that is running |
 | `lyricslens --help` | the whole list |
 
+Tab completes these options in bash, zsh and fish, for both names. The
+installer adds one line to `~/.zshrc` for zsh, marked so `--remove` takes it
+out again.
+
 ### A key to hide it
 
 Wayland gives an ordinary program no way to claim a key combination, so the

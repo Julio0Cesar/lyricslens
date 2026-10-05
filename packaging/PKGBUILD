@@ -40,6 +40,11 @@ package() {
     install -Dm644 "packaging/icons/$size.png" \
       "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/$pkgname.png"
   done
+  install -Dm644 packaging/completions/lyricslens.bash "$pkgdir/usr/share/bash-completion/completions/$pkgname"
+  ln -sf "$pkgname" "$pkgdir/usr/share/bash-completion/completions/lls"
+  install -Dm644 packaging/completions/_lyricslens "$pkgdir/usr/share/zsh/site-functions/_$pkgname"
+  install -Dm644 packaging/completions/lyricslens.fish "$pkgdir/usr/share/fish/vendor_completions.d/$pkgname.fish"
+  ln -sf "$pkgname.fish" "$pkgdir/usr/share/fish/vendor_completions.d/lls.fish"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 }
