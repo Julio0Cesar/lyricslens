@@ -17,7 +17,9 @@ everything else — including a window in fullscreen.
 
 </div>
 
-<!-- A recording of the overlay following a song goes here. -->
+<p align="center">
+  <img src="assets/demo.gif" alt="LyricsLens showing the line being sung over the desktop" width="800">
+</p>
 
 ---
 
@@ -179,6 +181,10 @@ the overlay straight away.
 
 The same window has the switch that lets you drag the overlay, the screen it
 lives on, and whether it starts with your session.
+
+<p align="center">
+  <img src="assets/settings.gif" alt="Changing the preferences and the overlay updating straight away" width="800">
+</p>
 
 ### When the words are wrong
 
