@@ -49,6 +49,21 @@ LYRICSLENS_PLAYER=lyricslensfake cargo run
   `parse lrc lines with multiple timestamps`.
 - Everything in English: code, comments, commits, issues.
 
+## Adding a language
+
+No building needed to try one:
+
+1. Copy `locale/es.toml` to `~/.config/lyricslens/locale/`, renamed to the
+   language's code: `fr.toml`, `de.toml`, `it.toml`.
+2. Replace the text on the right of each `=` with the translation. Keep the
+   English on the left as it is: it is how the program finds the sentence.
+3. Restart LyricsLens with `LANG` set to that language, for example
+   `LANG=fr_FR.UTF-8 lyricslens --foreground`, and check each screen.
+
+To ship it with the program, put the file in `locale/`, add it to `BUILT_IN`
+in `src/i18n.rs`, and run the checks: a test fails if it has fewer sentences
+than the others.
+
 ## Where things are
 
 ```
@@ -57,5 +72,6 @@ src/lyrics.rs     LRC parsing, title cleanup, the LRCLIB client
 src/sync.rs       the clock that says where the song is
 src/store.rs      settings and the lyrics cache, on disk
 src/ui.rs         the overlay and the preferences window
+src/i18n.rs       which language is shown; the words are in locale/
 src/app.rs        the worker thread that ties them together
 ```

@@ -4,232 +4,97 @@
 //! readable without chasing a table to find out what a screen says, and a
 //! sentence with no translation falls back to the one written here.
 //!
+//! The translations are TOML files in `locale/`, one per language, built into
+//! the program. A file of the same name in `~/.config/lyricslens/locale/` is
+//! read on top of the built-in one, so a language can be added, or a word
+//! fixed, without building anything.
+//!
 //! Code, comments and commits stay in English. This is only what is on screen.
 
-/// The languages there are words for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Language {
-    English,
-    Portuguese,
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::OnceLock;
+
+/// The languages that ship inside the program, by code.
+const BUILT_IN: &[(&str, &str)] = &[
+    ("es", include_str!("../locale/es.toml")),
+    ("pt", include_str!("../locale/pt.toml")),
+];
+
+/// The sentence to show, translated when there is a translation.
+pub fn t(english: &str) -> String {
+    static WORDS: OnceLock<HashMap<String, String>> = OnceLock::new();
+    WORDS
+        .get_or_init(|| {
+            let own = crate::store::config_dir().map(|dir| dir.join("locale"));
+            requested()
+                .map(|code| words(&code, own.as_deref()))
+                .unwrap_or_default()
+        })
+        .get(english)
+        .cloned()
+        .unwrap_or_else(|| english.to_owned())
 }
 
-/// What the session asks for, from the usual variables.
-pub fn language() -> Language {
+/// The language the session asks for, as a lowercase code such as `pt_br`,
+/// or `None` when it asks for English or for nothing in particular.
+///
+/// The first of the usual variables that is set decides, as it does for
+/// every other program.
+fn requested() -> Option<String> {
     for name in ["LC_ALL", "LC_MESSAGES", "LANG"] {
         let Ok(value) = std::env::var(name) else {
             continue;
         };
-        if value.to_ascii_lowercase().starts_with("pt") {
-            return Language::Portuguese;
+        if value.is_empty() {
+            continue;
         }
-        if !value.is_empty() && value != "C" && value != "POSIX" {
-            return Language::English;
+        let code = value
+            .split(['.', '@'])
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if code.is_empty() || code == "c" || code == "posix" || code.starts_with("en") {
+            return None;
         }
+        return Some(code);
     }
-    Language::English
+    None
 }
 
-/// The sentence to show, translated when there is a translation.
-pub fn t(english: &str) -> String {
-    if language() == Language::English {
-        return english.to_owned();
+/// Every translated sentence for a language code.
+///
+/// The bare language comes first and the regional one on top of it, so
+/// `pt_br.toml` only needs the words that differ from `pt.toml`. At each
+/// step the person's own file, from `own`, wins over the built-in one.
+fn words(code: &str, own: Option<&Path>) -> HashMap<String, String> {
+    let language = code.split('_').next().unwrap_or(code);
+    let mut candidates = vec![language];
+    if code != language {
+        candidates.push(code);
     }
-    PORTUGUESE
-        .iter()
-        .find(|(key, _)| *key == english)
-        .map_or_else(
-            || english.to_owned(),
-            |(_, translated)| (*translated).to_owned(),
-        )
+
+    let mut words = HashMap::new();
+    for candidate in candidates {
+        if let Some((_, text)) = BUILT_IN.iter().find(|(name, _)| *name == candidate) {
+            merge(&mut words, text, candidate);
+        }
+        let file = own.map(|dir| dir.join(format!("{candidate}.toml")));
+        if let Some(text) = file.and_then(|path| std::fs::read_to_string(path).ok()) {
+            merge(&mut words, &text, candidate);
+        }
+    }
+    words
 }
 
-/// Every sentence the program puts on screen, and its Portuguese.
-const PORTUGUESE: &[(&str, &str)] = &[
-    // The tray menu.
-    ("Show / hide", "Mostrar ou esconder"),
-    ("Move the overlay", "Mover o overlay"),
-    ("Preferences…", "Preferências…"),
-    ("Quit", "Sair"),
-    // The preferences window, by section.
-    ("Player", "Player"),
-    (
-        "Which player to follow when more than one is open.",
-        "Qual player seguir quando há mais de um aberto.",
-    ),
-    ("Part of the bus name", "Parte do nome no barramento"),
-    ("Lyrics for this track", "Letra desta faixa"),
-    (
-        "When the wrong words are on screen, find the right ones by hand.",
-        "Quando a letra na tela está errada, encontre a certa à mão.",
-    ),
-    ("Artist", "Artista"),
-    ("Title", "Título"),
-    ("Search", "Buscar"),
-    ("Searching…", "Buscando…"),
-    (
-        "A title is the least it needs.",
-        "É preciso ao menos um título.",
-    ),
-    ("The overlay is not running.", "O overlay não está aberto."),
-    (
-        "Nothing found under that name.",
-        "Nada encontrado com esse nome.",
-    ),
-    ("Now showing these", "Mostrando esta agora"),
-    ("Appearance", "Aparência"),
-    (
-        "Every change here shows on the overlay straight away.",
-        "Toda mudança aqui aparece no overlay na hora.",
-    ),
-    ("Font size", "Tamanho da fonte"),
-    ("Font", "Fonte"),
-    ("Font weight", "Peso da fonte"),
-    ("Line up the words", "Alinhamento das palavras"),
-    ("Centre", "Centro"),
-    ("Left", "Esquerda"),
-    ("Right", "Direita"),
-    ("Width", "Largura"),
-    (
-        "In pixels. Where a long line wraps",
-        "Em pixels. Onde uma linha longa quebra",
-    ),
-    ("Rounded corners", "Cantos arredondados"),
-    (
-        "In pixels, on the strip behind the line",
-        "Em pixels, na faixa atrás da linha",
-    ),
-    ("Distance from the bottom", "Distância da base"),
-    ("In pixels", "Em pixels"),
-    ("Text colour", "Cor do texto"),
-    ("Shadow under the text", "Sombra sob o texto"),
-    (
-        "What keeps it readable over a bright window",
-        "O que a mantém legível sobre uma janela clara",
-    ),
-    ("Darkness behind the line", "Escuridão atrás da linha"),
-    (
-        "Per cent. Zero shows nothing behind the words",
-        "Em por cento. Zero não mostra nada atrás das palavras",
-    ),
-    ("Track name", "Nome da faixa"),
-    (
-        "Who is playing what, above the lyrics",
-        "Quem toca o quê, acima da letra",
-    ),
-    ("Progress", "Progresso"),
-    (
-        "A thin bar under the lyrics. Needs a player that reports the length",
-        "Uma barra fina sob a letra. Precisa de um player que informe a duração",
-    ),
-    ("For this player", "Para este player"),
-    ("For this track only", "Só para esta faixa"),
-    ("Nothing playing", "Nada tocando"),
-    ("Whole song…", "Letra inteira…"),
-    ("Lyrics", "Letra"),
-    (
-        "Nothing playing with lyrics to show.",
-        "Nada tocando com letra para mostrar.",
-    ),
-    ("Album art", "Capa do álbum"),
-    (
-        "Beside the lyrics. Looked up when the player offers none",
-        "Ao lado da letra. Buscada quando o player não oferece nenhuma",
-    ),
-    ("Line just sung", "Linha recém-cantada"),
-    (
-        "Kept above the current one, dimmed",
-        "Fica acima da atual, esmaecida",
-    ),
-    ("Lines still to come", "Próximas linhas"),
-    (
-        "Shown dimmed underneath. At least one is needed for the line to rise into place",
-        "Aparecem esmaecidas embaixo. Ao menos uma é necessária para a linha subir até o lugar",
-    ),
-    ("Karaoke", "Karaokê"),
-    (
-        "Fills the line as the song moves through it",
-        "Preenche a linha conforme a música avança",
-    ),
-    ("Hide while paused", "Esconder quando pausado"),
-    (
-        "Lyrics on screen with nothing playing is the most confusing thing it can do",
-        "Letra na tela sem nada tocando é a coisa mais confusa que ele pode fazer",
-    ),
-    ("Position", "Posição"),
-    (
-        "A layer surface belongs to one screen and cannot be dragged to another.",
-        "Uma superfície de camada pertence a uma tela e não pode ser arrastada para outra.",
-    ),
-    ("Let me move it", "Deixar arrastar"),
-    (
-        "The overlay takes your clicks while this is on, so you can drag it",
-        "O overlay aceita seus cliques enquanto isto está ligado, para você arrastá-lo",
-    ),
-    ("Screen", "Tela"),
-    (
-        "Whichever the compositor picks",
-        "A que o compositor escolher",
-    ),
-    ("Timing", "Sincronia"),
-    (
-        "Positive holds the lyrics back, negative brings them forward.",
-        "Positivo atrasa a letra, negativo adianta.",
-    ),
-    ("Offset in milliseconds", "Ajuste em milissegundos"),
-    ("Keys", "Teclas"),
-    ("Show and hide", "Mostrar e esconder"),
-    ("Move it", "Mover"),
-    (
-        "Line for your configuration",
-        "Linha para a sua configuração",
-    ),
-    ("Copy", "Copiar"),
-    ("Copied", "Copiado"),
-    ("Starting", "Início"),
-    (
-        "The switch reads the file it writes, so it can never show on for something that is off.",
-        "A chave lê o arquivo que ela escreve, então nunca mostra ligado o que está desligado.",
-    ),
-    ("Start with the session", "Iniciar com a sessão"),
-    (
-        "Opens when you log in, with the overlay ready",
-        "Abre ao entrar na sessão, com o overlay pronto",
-    ),
-    ("Closing", "Fechar"),
-    ("Quit LyricsLens", "Sair do LyricsLens"),
-    (
-        "Closes the overlay and leaves the status bar",
-        "Fecha o overlay e sai da barra de status",
-    ),
-    ("A newer version is out", "Há uma versão mais nova"),
-    (
-        "Installs it over this one. Nothing happens until you run it",
-        "Instala por cima desta. Nada acontece até você rodar",
-    ),
-    (
-        "In pixels. Where a long line wraps",
-        "Em pixels. Onde uma linha longa quebra",
-    ),
-    ("Looking…", "Procurando…"),
-    ("lines being followed.", "linhas sendo acompanhadas."),
-    (
-        "No synced lyrics found for this one.",
-        "Nenhuma letra sincronizada encontrada para esta.",
-    ),
-    // What the overlay says when there is nothing to sing.
-    ("looking for the lyrics…", "procurando a letra…"),
-    (
-        "no synced lyrics for this one",
-        "sem letra sincronizada para esta",
-    ),
-    ("waiting for the player", "esperando o player"),
-    (
-        "this player does not report its position",
-        "este player não informa a posição",
-    ),
-    ("unknown track", "faixa desconhecida"),
-    ("drag me", "arraste-me"),
-];
+/// A file that does not parse is skipped whole: half a language is worse
+/// than English.
+fn merge(words: &mut HashMap<String, String>, text: &str, code: &str) {
+    match toml::from_str::<HashMap<String, String>>(text) {
+        Ok(more) => words.extend(more),
+        Err(error) => tracing::warn!(%error, code, "a translation file could not be read"),
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -239,15 +104,74 @@ mod tests {
     /// `cargo test` runs them in threads.
     #[test]
     fn what_is_translated_and_what_is_not() {
-        unsafe { std::env::set_var("LC_ALL", "pt_BR.UTF-8") };
-        assert_eq!(language(), Language::Portuguese);
-        assert_eq!(t("Quit"), "Sair");
-        assert_eq!(t("Nothing here says this"), "Nothing here says this");
+        let locale = std::env::temp_dir().join("lyricslens-i18n-test");
+        let _ = std::fs::remove_dir_all(&locale);
+        let own = Some(locale.as_path());
 
-        unsafe { std::env::set_var("LC_ALL", "fr_FR.UTF-8") };
-        assert_eq!(language(), Language::English);
-        assert_eq!(t("Quit"), "Quit");
+        unsafe { std::env::set_var("LC_ALL", "pt_BR.UTF-8") };
+        assert_eq!(requested().as_deref(), Some("pt_br"));
+        assert_eq!(
+            words("pt_br", own).get("Quit").map(String::as_str),
+            Some("Sair")
+        );
+        assert_eq!(
+            words("es_mx", own).get("Quit").map(String::as_str),
+            Some("Salir")
+        );
+
+        unsafe { std::env::set_var("LC_ALL", "en_GB.UTF-8") };
+        assert_eq!(requested(), None);
+        unsafe { std::env::set_var("LC_ALL", "C") };
+        assert_eq!(requested(), None);
+
+        // A language nobody built in, added by dropping a file in place, and
+        // a built-in word corrected the same way.
+        std::fs::create_dir_all(&locale).unwrap();
+        std::fs::write(locale.join("fr.toml"), "\"Quit\" = \"Quitter\"\n").unwrap();
+        std::fs::write(locale.join("es.toml"), "\"Quit\" = \"Cerrar\"\n").unwrap();
+        assert_eq!(
+            words("fr_fr", own).get("Quit").map(String::as_str),
+            Some("Quitter")
+        );
+        assert_eq!(
+            words("es", own).get("Quit").map(String::as_str),
+            Some("Cerrar")
+        );
+        assert_eq!(
+            words("es", own).get("Copy").map(String::as_str),
+            Some("Copiar")
+        );
+
+        // A broken file costs that file, not the language.
+        std::fs::write(locale.join("es.toml"), "this is not toml").unwrap();
+        assert_eq!(
+            words("es", own).get("Quit").map(String::as_str),
+            Some("Salir")
+        );
 
         unsafe { std::env::remove_var("LC_ALL") };
+        let _ = std::fs::remove_dir_all(&locale);
+    }
+
+    /// Every built-in file parses, and none of them is missing a sentence the
+    /// others have.
+    #[test]
+    fn the_built_in_languages_agree() {
+        let tables: Vec<(&str, HashMap<String, String>)> = BUILT_IN
+            .iter()
+            .map(|(code, text)| (*code, toml::from_str(text).expect("a built-in file parses")))
+            .collect();
+        let (first, reference) = &tables[0];
+        for (code, table) in &tables[1..] {
+            let mut missing: Vec<_> = reference
+                .keys()
+                .filter(|key| !table.contains_key(*key))
+                .collect();
+            missing.extend(table.keys().filter(|key| !reference.contains_key(*key)));
+            assert!(
+                missing.is_empty(),
+                "{first} and {code} differ on {missing:?}"
+            );
+        }
     }
 }
