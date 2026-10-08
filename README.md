@@ -48,7 +48,7 @@ curl -fsSL https://raw.githubusercontent.com/Julio0Cesar/lyricslens/main/install
 <summary>Debian, Ubuntu and Mint</summary>
 
 From the repository, so it updates with the rest of the system —
-[the instructions are here](https://julio0cesar.github.io/lyricslens/).
+[the instructions are here](https://julio0cesar.github.io/lyricslens/packages/).
 
 Or download the `.deb` from [the latest release](https://github.com/Julio0Cesar/lyricslens/releases/latest) and:
 

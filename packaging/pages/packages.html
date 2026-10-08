@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LyricsLens — synced lyrics over any window</title>
+<meta name="description" content="A Linux overlay that draws the line being sung above every window, including one in fullscreen.">
+<link rel="icon" href="../icon.png">
+<style>
+  :root { color-scheme: dark light; --ink: #e8e8ea; --dim: #a0a0a8; --bg: #131316; --line: #2a2a30; }
+  @media (prefers-color-scheme: light) { :root { --ink: #1b1b1f; --dim: #5a5a63; --bg: #fbfbfd; --line: #e2e2e8; } }
+  body { margin: 0 auto; padding: 48px 20px 96px; max-width: 46rem; background: var(--bg); color: var(--ink);
+         font: 16px/1.6 system-ui, sans-serif; }
+  h1 { font-size: 2.1rem; margin: 0 0 8px; letter-spacing: -0.02em; }
+  h2 { font-size: 1.05rem; margin: 44px 0 8px; }
+  p { color: var(--dim); }
+  .lead { color: var(--ink); font-size: 1.15rem; }
+  pre { background: color-mix(in srgb, var(--ink) 7%, transparent); border: 1px solid var(--line);
+        border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: 0.9rem; }
+  code { font-family: ui-monospace, monospace; }
+  a { color: inherit; }
+  header { display: flex; align-items: center; gap: 14px; }
+  header img { width: 48px; height: 48px; }
+  ul { color: var(--dim); padding-left: 1.1rem; }
+  table { border-collapse: collapse; color: var(--dim); font-size: 0.95rem; }
+  td { padding: 3px 18px 3px 0; }
+  .files a { display: inline-block; margin-right: 18px; }
+  footer { margin-top: 56px; border-top: 1px solid var(--line); padding-top: 16px; color: var(--dim); font-size: 0.9rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <img src="../icon.png" alt="">
+  <h1>LyricsLens</h1>
+</header>
+
+<p class="lead">The line being sung, over every window — including one in fullscreen.
+   It reads what your player is playing, finds the words, and keeps them in time.
+   Linux, no account, no tracking.</p>
+
+<h2>Install</h2>
+<p>Into <code>~/.local</code>, no root, nothing outside your home directory.</p>
+<pre><code>curl -fsSL https://raw.githubusercontent.com/Julio0Cesar/lyricslens/main/install.sh | sh</code></pre>
+<p>Then run <code>lyricslens</code>, or <code>lls</code>. It puts an icon in the status bar and
+   stays out of the way.</p>
+
+<h2>Packages</h2>
+<p class="files">
+  <a href="https://github.com/Julio0Cesar/lyricslens/releases/latest/download/lyricslens-${VERSION}-x86_64.deb">.deb (${VERSION})</a>
+  <a href="https://github.com/Julio0Cesar/lyricslens/releases/latest/download/lyricslens-${VERSION}-x86_64.rpm">.rpm (${VERSION})</a>
+  <a href="https://github.com/Julio0Cesar/lyricslens/releases/latest">every release</a>
+</p>
+<p>Install a package with <code>apt install ./file.deb</code> rather than <code>dpkg -i</code>:
+   only the first pulls in what it needs.</p>
+
+<h2>What it needs</h2>
+<table>
+  <tr><td>glibc</td><td>2.39 or newer</td></tr>
+  <tr><td>GTK</td><td>4.12 or newer</td></tr>
+  <tr><td>libadwaita</td><td>1.5 or newer</td></tr>
+</table>
+<p>Which means Ubuntu 24.04, Debian 13, Fedora 40, openSUSE Tumbleweed or Arch, and
+   anything newer. The layer-shell library is built into the binary, so there is
+   nothing to install for it.</p>
+<p>A player that reports where it is in the track. Spotify, mpv with
+   <code>mpv-mpris</code>, Rhythmbox and Amberol do. Firefox does not for some of what
+   it plays, and the overlay says so rather than guessing.</p>
+
+<h2>Updates, from your package manager</h2>
+<p>These repositories carry the same binary the archive does. A machine that
+   installs from them gets new versions with the rest of its updates.</p>
+
+<h2>Debian, Ubuntu, Mint</h2>
+<pre><code>curl -fsSL https://julio0cesar.github.io/lyricslens/lyricslens.asc \
+  | sudo gpg --dearmor -o /usr/share/keyrings/lyricslens.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/lyricslens.gpg] https://julio0cesar.github.io/lyricslens/apt ./" \
+  | sudo tee /etc/apt/sources.list.d/lyricslens.list
+
+sudo apt update &amp;&amp; sudo apt install lyricslens</code></pre>
+
+<h2>Fedora, openSUSE</h2>
+<pre><code>sudo rpm --import https://julio0cesar.github.io/lyricslens/lyricslens.asc
+
+sudo tee /etc/yum.repos.d/lyricslens.repo &lt;&lt;'REPO'
+[lyricslens]
+name=LyricsLens
+baseurl=https://julio0cesar.github.io/lyricslens/rpm
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://julio0cesar.github.io/lyricslens/lyricslens.asc
+REPO
+
+sudo dnf install lyricslens</code></pre>
+
+<h2>The key</h2>
+<p>Everything here is signed with this one. Check it against what your machine
+   imported before trusting either.</p>
+<pre><code>${FINGERPRINT}</code></pre>
+
+<h2>Removing it</h2>
+<pre><code>lyricslens --uninstall
+
+sudo rm /etc/apt/sources.list.d/lyricslens.list /usr/share/keyrings/lyricslens.gpg
+sudo rm /etc/yum.repos.d/lyricslens.repo</code></pre>
+
+<footer>
+  <a href="https://github.com/Julio0Cesar/lyricslens">Source</a> ·
+  <a href="https://github.com/Julio0Cesar/lyricslens/issues">Something wrong?</a> ·
+  MIT
+</footer>
+
+</body>
+</html>

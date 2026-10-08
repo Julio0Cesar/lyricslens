@@ -87,8 +87,12 @@ jobs:
           # to come from the release rather than be typed into the page.
           VERSION=$(gh release view --json tagName --jq .tagName)
           export VERSION
+          # The address itself sends people to the landing page; the
+          # repository instructions keep a page of their own.
+          cp packaging/pages/index.html site/index.html
+          mkdir -p site/packages
           FINGERPRINT=$(sed 's/.\{4\}/& /g' fingerprint) \
-            envsubst '$FINGERPRINT $VERSION' < packaging/pages/index.html > site/index.html
+            envsubst '$FINGERPRINT $VERSION' < packaging/pages/packages.html > site/packages/index.html
 
       - uses: actions/upload-pages-artifact@v3
         with:
