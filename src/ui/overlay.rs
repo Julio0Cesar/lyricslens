@@ -540,9 +540,9 @@ impl Overlay {
     /// sits at the top of it. Nothing is hidden above: a row that has gone has
     /// already been written over.
     fn settle(&self, wanted: &[String]) {
-        let waiting = usize::from(self.placement.borrow().settings.upcoming_lines);
-
         let highlighted = self.highlighted.get();
+        let waiting = self.waiting(wanted[highlighted].is_empty());
+
         for (index, row) in self.rows.iter().enumerate() {
             let text = if index <= waiting + highlighted {
                 wanted.get(index).cloned().unwrap_or_default()
@@ -554,18 +554,32 @@ impl Overlay {
         }
 
         // Shown first: a hidden widget measures as nothing, and `fit` would
-        // size the window onto the column to a single pixel.
-        self.lines
-            .set_visible(!wanted[self.highlighted.get()].is_empty());
+        // size the window onto the column to a single pixel. An instrumental
+        // keeps the strip up as long as a line is still coming.
+        let anything = wanted[highlighted..=highlighted + waiting.min(1)]
+            .iter()
+            .any(|text| !text.is_empty());
+        self.lines.set_visible(anything);
         self.fit();
         self.motion.borrow_mut().shown = wanted.to_vec();
+    }
+
+    /// How many lines waiting below the one being sung are on screen.
+    ///
+    /// The settings decide, except in an instrumental: with nothing being
+    /// sung, the next line stays up even when no lines waiting were asked
+    /// for, so the overlay reads as a pause in the song and not as its end.
+    fn waiting(&self, nothing_sung: bool) -> usize {
+        let asked = usize::from(self.placement.borrow().settings.upcoming_lines);
+        if nothing_sung { asked.max(1) } else { asked }
     }
 
     /// Sizes the window onto the column, and scrolls it to the line being
     /// sung.
     fn fit(&self) {
-        let waiting = usize::from(self.placement.borrow().settings.upcoming_lines);
-        let visible = 1 + waiting + self.highlighted.get();
+        let highlighted = self.highlighted.get();
+        let waiting = self.waiting(self.rows[highlighted].text().is_empty());
+        let visible = 1 + waiting + highlighted;
 
         let mut height = 0;
         for row in self.rows.iter().take(visible) {
@@ -588,8 +602,17 @@ impl Overlay {
         // The height it has on screen, not the one it would like: a line that
         // wrapped is taller than its unconstrained measurement, and scrolling
         // by the smaller number leaves the row that left still showing.
-        let step = f64::from(self.rows[0].root().height() + SPACING);
-        if step <= f64::from(SPACING) {
+        let leaving = self.highlighted.get();
+        let climbing = self.rows[leaving + 1].text();
+        // Coming out of an instrumental the row above is empty and takes no
+        // room: the next line is already at the top, so it only grows into
+        // place instead of climbing.
+        let step = if self.rows[leaving].text().is_empty() {
+            0.0
+        } else {
+            f64::from(self.rows[0].root().height() + SPACING)
+        };
+        if step <= f64::from(SPACING) && !self.rows[leaving].text().is_empty() {
             let wanted = self.motion.borrow().wanted.clone();
             self.motion.borrow_mut().running = false;
             self.settle(&wanted);
@@ -599,8 +622,6 @@ impl Overlay {
         let started = Instant::now();
         let overlay = self.clone();
         let karaoke = self.placement.borrow().settings.karaoke;
-        let leaving = self.highlighted.get();
-        let climbing = self.rows[leaving + 1].text();
 
         self.column.add_tick_callback(move |_, _| {
             let progress = (started.elapsed().as_secs_f64() / SLIDE.as_secs_f64()).min(1.0);

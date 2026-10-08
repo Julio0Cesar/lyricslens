@@ -546,6 +546,11 @@ impl State {
     /// One more than the settings show: the overlay needs the line after the
     /// last visible one ready to climb into its place.
     fn upcoming(&self) -> Vec<String> {
+        // Whatever hides the line being sung hides what comes after it too:
+        // in an instrumental the next line is all that is on screen.
+        if self.track.is_empty() || (self.settings.hide_when_paused && !self.playing) {
+            return Vec::new();
+        }
         let wanted = usize::from(self.settings.upcoming_lines) + 1;
         let (Some(lyrics), Some(position)) =
             (self.lyrics.as_ref(), self.clock.position(Instant::now()))
