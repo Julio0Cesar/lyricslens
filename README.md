@@ -255,7 +255,14 @@ Two decisions carry the rest, and both came from measurement:
 ## Language
 
 The preferences window, the tray menu and what the overlay says follow your
-session: Portuguese when `LANG` asks for it, English otherwise.
+session's `LANG`: English, Portuguese and Spanish are built in.
+
+To use another language, or to fix a word, put a file named after the language
+in `~/.config/lyricslens/locale/`, such as `fr.toml`, and restart the program.
+Each line pairs the English sentence with its translation; `locale/es.toml`
+in this repository has every sentence there is. Anything the file leaves out
+stays in English, and a regional file such as `pt_br.toml` only needs the words
+that differ from `pt.toml`.
 
 ## Where it keeps things
 
