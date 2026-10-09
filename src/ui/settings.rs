@@ -624,7 +624,12 @@ pub fn show(app: &adw::Application, search: Option<Search>) {
         page.add(&divider());
         page.add(&lyrics_group(&search).group);
     }
+    // Starting with the session is a file on the host, out of the sandbox's
+    // reach; Flatpak users get it from their desktop's own startup settings.
     for section in [&look, &place, &timing, &keys, &start, &close] {
+        if section.group == start.group && crate::desktop::sandboxed() {
+            continue;
+        }
         page.add(&divider());
         page.add(&section.group);
     }
